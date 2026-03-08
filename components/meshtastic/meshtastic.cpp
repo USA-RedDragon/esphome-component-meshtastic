@@ -2,6 +2,7 @@
 #include "esphome/core/hal.h"
 #include "esphome/core/helpers.h"
 
+#include "enum_names.h"
 #include "mesh.pb.h"
 #include <pb_decode.h>
 #include <pb_encode.h>
@@ -44,7 +45,11 @@ void Meshtastic::dump_config() {
   ESP_LOGCONFIG(TAG, "Meshtastic:");
   ESP_LOGCONFIG(TAG, "  Node: !%08x \"%s\" (%s)", this->node_num_, this->long_name_.c_str(),
                 this->short_name_.c_str());
-  ESP_LOGCONFIG(TAG, "  Role: %u  Hop limit: %u", this->role_, this->hop_limit_);
+  ESP_LOGCONFIG(TAG, "  Role: %s  Hop limit: %u", role_name(this->role_), this->hop_limit_);
+  if (role_is_deprecated(this->role_))
+    ESP_LOGW(TAG, "Configured role '%s' is deprecated", role_name(this->role_));
+  if (hardware_model_is_deprecated(this->hw_model_))
+    ESP_LOGW(TAG, "Configured hw_model '%s' is deprecated", hardware_model_name(this->hw_model_));
   for (const auto &ch : this->channels_) {
     ESP_LOGCONFIG(TAG, "  Channel \"%s\": hash=0x%02x %s%s%s", ch.name.c_str(), ch.hash,
                   ch.has_crypto() ? "encrypted" : "cleartext", ch.uplink ? " uplink" : "",
