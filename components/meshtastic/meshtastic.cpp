@@ -77,6 +77,8 @@ void Meshtastic::on_packet(const std::vector<uint8_t> &packet, float rssi, float
            rssi, snr, h.from, h.to, h.id, h.channel, h.hop_limit, h.hop_start, h.want_ack ? " ack" : "",
            h.via_mqtt ? " mqtt" : "");
 
+  this->maybe_relay_(packet, h, snr);
+
   const uint8_t *cipher = packet.data() + MESHTASTIC_HEADER_LEN;
   const size_t cipher_len = packet.size() - MESHTASTIC_HEADER_LEN;
 
@@ -98,6 +100,43 @@ void Meshtastic::on_packet(const std::vector<uint8_t> &packet, float rssi, float
     return;
   }
   ESP_LOGD(TAG, "  no channel matched hash 0x%02x (or decode failed)", h.channel);
+}
+
+void Meshtastic::maybe_relay_(const std::vector<uint8_t> &packet, const PacketHeader &h, float snr) {
+  if (h.from == this->node_num_)  // our own packet
+    return;
+  if (h.to == this->node_num_)  // we are the destination
+    return;
+  if (h.hop_limit == 0)  // expired
+    return;
+  if (!role_rebroadcasts(this->role_))
+    return;
+
+  std::vector<uint8_t> tx = packet;
+  PacketHeader rh = h;
+  rh.hop_limit = h.hop_limit - 1;
+  rh.next_hop = 0;
+  rh.relay_node = (uint8_t) (this->node_num_ & 0xFF);
+  serialize_header(rh, tx.data());
+
+  const uint32_t delay = rebroadcast_delay_ms(this->role_, snr);
+  ESP_LOGD(TAG, "  relaying in %ums (hop %u->%u)", delay, h.hop_limit, rh.hop_limit);
+  this->set_timeout(delay, [this, tx]() { this->transmit_(tx); });
+}
+
+void Meshtastic::transmit_(const std::vector<uint8_t> &packet) {
+#ifdef USE_SX126X
+  if (this->sx126x_ != nullptr) {
+    this->sx126x_->transmit_packet(packet);
+    return;
+  }
+#endif
+#ifdef USE_SX127X
+  if (this->sx127x_ != nullptr) {
+    this->sx127x_->transmit_packet(packet);
+    return;
+  }
+#endif
 }
 #endif
 

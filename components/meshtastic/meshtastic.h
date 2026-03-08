@@ -4,6 +4,7 @@
 #include "esphome/core/log.h"
 #include "channel.h"
 #include "protocol.h"
+#include "router.h"
 #include <string>
 #include <vector>
 
@@ -50,6 +51,11 @@ class Meshtastic : public Component
 #endif
 
  protected:
+#if defined(USE_SX126X) || defined(USE_SX127X)
+  void maybe_relay_(const std::vector<uint8_t> &packet, const PacketHeader &h, float snr);
+  void transmit_(const std::vector<uint8_t> &packet);
+#endif
+
   std::string long_name_;
   std::string short_name_;
   uint32_t node_num_{0};
