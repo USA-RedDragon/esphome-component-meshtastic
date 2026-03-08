@@ -34,6 +34,8 @@ class Meshtastic : public Component
   void set_long_name(const std::string &name) { this->long_name_ = name; }
   void set_short_name(const std::string &name) { this->short_name_ = name; }
   void set_node_num(uint32_t num) { this->node_num_ = num; }
+  void set_role(uint32_t role) { this->role_ = role; }
+  void set_hop_limit(uint8_t hop_limit) { this->hop_limit_ = hop_limit; }
   void add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink);
 
 #ifdef USE_SX126X
@@ -51,6 +53,8 @@ class Meshtastic : public Component
   std::string long_name_;
   std::string short_name_;
   uint32_t node_num_{0};
+  uint32_t role_{0};  // meshtastic_Config_DeviceConfig_Role_CLIENT
+  uint8_t hop_limit_{3};
   std::vector<Channel> channels_;
 
 #ifdef USE_SX126X

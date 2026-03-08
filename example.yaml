@@ -60,6 +60,8 @@ meshtastic:
     long_name: "ESP32S3"
     short_name: "ESPS"
     node_num: 0xDEAD
+    role: CLIENT
+    hop_limit: 3
     channels:
       - name: LongFast
         psk: AQ==

@@ -35,6 +35,7 @@ void Meshtastic::dump_config() {
   ESP_LOGCONFIG(TAG, "Meshtastic:");
   ESP_LOGCONFIG(TAG, "  Node: !%08x \"%s\" (%s)", this->node_num_, this->long_name_.c_str(),
                 this->short_name_.c_str());
+  ESP_LOGCONFIG(TAG, "  Role: %u  Hop limit: %u", this->role_, this->hop_limit_);
   for (const auto &ch : this->channels_) {
     ESP_LOGCONFIG(TAG, "  Channel \"%s\": hash=0x%02x %s%s%s", ch.name.c_str(), ch.hash,
                   ch.has_crypto() ? "encrypted" : "cleartext", ch.uplink ? " uplink" : "",
