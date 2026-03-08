@@ -30,6 +30,7 @@ CONF_ON_PACKET = "on_packet"
 CONF_ON_TEXT = "on_text"
 CONF_ON_NODEINFO = "on_nodeinfo"
 CONF_ON_POSITION = "on_position"
+CONF_ON_TELEMETRY = "on_telemetry"
 
 MIN_NODE_INFO_INTERVAL_MS = 60 * 60 * 1000
 
@@ -71,6 +72,10 @@ NodeInfoTrigger = meshtastic_ns.class_(
 PositionTrigger = meshtastic_ns.class_(
     "PositionTrigger",
     automation.Trigger.template(cg.uint32, cg.double, cg.double, cg.int32, cg.uint32, cg.float_, cg.float_),
+)
+TelemetryTrigger = meshtastic_ns.class_(
+    "TelemetryTrigger",
+    automation.Trigger.template(cg.uint32, cg.uint32, cg.float_, cg.float_, cg.float_, cg.uint32),
 )
 
 
@@ -151,6 +156,9 @@ CONFIG_SCHEMA = cv.Schema(
         ),
         cv.Optional(CONF_ON_POSITION): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(PositionTrigger)}
+        ),
+        cv.Optional(CONF_ON_TELEMETRY): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(TelemetryTrigger)}
         ),
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
@@ -234,6 +242,20 @@ async def to_code(config):
                 (cg.uint32, "time"),
                 (cg.float_, "rssi"),
                 (cg.float_, "snr"),
+            ],
+            conf,
+        )
+    for conf in config.get(CONF_ON_TELEMETRY, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        await automation.build_automation(
+            trigger,
+            [
+                (cg.uint32, "from"),
+                (cg.uint32, "battery_level"),
+                (cg.float_, "voltage"),
+                (cg.float_, "channel_utilization"),
+                (cg.float_, "air_util_tx"),
+                (cg.uint32, "uptime_seconds"),
             ],
             conf,
         )

@@ -175,6 +175,23 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
       }
     }
 
+    if (data.portnum == meshtastic_PortNum_TELEMETRY_APP && h.from != 0 && h.from != this->node_num_) {
+      meshtastic_Telemetry tel = meshtastic_Telemetry_init_zero;
+      pb_istream_t ts = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+      if (pb_decode(&ts, meshtastic_Telemetry_fields, &tel) &&
+          tel.which_variant == meshtastic_Telemetry_device_metrics_tag) {
+        const meshtastic_DeviceMetrics &dm = tel.variant.device_metrics;
+        if (node != nullptr) {
+          node->has_device_metrics = true;
+          node->device_metrics = dm;  // NodeInfoLite stores the full DeviceMetrics
+        }
+        ESP_LOGD(TAG, "  telemetry !%08x batt=%u%% %.2fV chUtil=%.1f%% airTx=%.1f%%", h.from, dm.battery_level,
+                 dm.voltage, dm.channel_utilization, dm.air_util_tx);
+        for (auto *t : this->on_telemetry_triggers_)
+          t->trigger(h.from, dm.battery_level, dm.voltage, dm.channel_utilization, dm.air_util_tx, dm.uptime_seconds);
+      }
+    }
+
     if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
       std::string text((const char *) data.payload.bytes, data.payload.size);
       ESP_LOGD(TAG, "  text: %s", text.c_str());

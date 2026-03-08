@@ -34,5 +34,11 @@ class PositionTrigger : public Trigger<uint32_t, double, double, int32_t, uint32
   explicit PositionTrigger(Meshtastic *parent) { parent->add_on_position_trigger(this); }
 };
 
+// TELEMETRY_APP device-metrics variant. (from, battery %, voltage, channel util %, air util tx %, uptime s)
+class TelemetryTrigger : public Trigger<uint32_t, uint32_t, float, float, float, uint32_t> {
+ public:
+  explicit TelemetryTrigger(Meshtastic *parent) { parent->add_on_telemetry_trigger(this); }
+};
+
 }  // namespace meshtastic
 }  // namespace esphome
