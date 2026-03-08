@@ -34,12 +34,10 @@ void Meshtastic::setup() {
   if (this->long_name_.empty())
     this->long_name_ = "Meshtastic " + this->short_name_;
 
-#if defined(USE_SX126X) || defined(USE_SX127X)
   if (this->node_info_interval_ > 0) {
     this->defer([this]() { this->broadcast_node_info_(); });
     this->set_interval(this->node_info_interval_, [this]() { this->broadcast_node_info_(); });
   }
-#endif
 }
 
 void Meshtastic::dump_config() {
@@ -79,6 +77,11 @@ void Meshtastic::set_radio(sx127x::SX127x *radio) {
 
 #if defined(USE_SX126X) || defined(USE_SX127X)
 void Meshtastic::on_packet(const std::vector<uint8_t> &packet, float rssi, float snr) {
+  this->handle_rx(packet, rssi, snr);
+}
+#endif
+
+void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float snr) {
   PacketHeader h;
   if (!parse_header(packet, h)) {
     ESP_LOGW(TAG, "Dropping runt packet: %zu bytes", packet.size());
@@ -217,7 +220,6 @@ void Meshtastic::broadcast_node_info_() {
   ESP_LOGD(TAG, "Broadcasting NodeInfo");
   this->send_data_(meshtastic_PortNum_NODEINFO_APP, buf, os.bytes_written, MESHTASTIC_BROADCAST_ADDR, 0, false);
 }
-#endif
 
 }  // namespace meshtastic
 }  // namespace esphome
