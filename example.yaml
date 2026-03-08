@@ -57,44 +57,121 @@ sx126x:
 
 meshtastic:
   - radio: id_sx126x
-    long_name: "ESP32S3"
-    short_name: "ESPS"
-    node_num: 0xDEAD
-    role: CLIENT
-    hop_limit: 3
-    node_info_interval: 3h
-    hw_model: DIY_V1
-    node_db_size: 100 # optional; 0 disables the node DB
+    long_name: "ESP32S3"      # <=40 chars; default "Meshtastic <short>"
+    short_name: "ESPS"        # <=4 chars; default = last 4 hex of node_num
+    node_num: 0xDEAD          # optional; default = last 4 bytes of the MAC
+    role: CLIENT              # any mainline role (deprecated ones warn at startup)
+    hop_limit: 3              # 0-7
+    node_info_interval: 3h    # >=1h (Meshtastic minimum); broadcast our NodeInfo this often
+    hw_model: DIY_V1          # any HardwareModel
+    node_db_size: 100         # optional; per-platform default; 0 disables the node DB
     channels:
+      # psk: 'default' | 'none' | index 0-255 | base64 (1/16/32 bytes) | hex (32/64 chars)
       - name: LongFast
-        psk: AQ==
-        uplink: false
-        downlink: false
+        psk: default          # the well-known public key (same as AQ== / index 1)
+        uplink: false         # (MQTT, phase F) publish packets heard on this channel
+        downlink: false       # (MQTT, phase F) inject packets from MQTT onto this channel
+      - name: Private
+        psk: 72+hNz2WKsLa5iESyBeYFRKMczH8ob3e5KE0gC+T7YQ=   # full 32-byte AES-256 key
+      - name: Regional
+        psk: Uw==             # 1-byte index (default key, last byte bumped)
+      - name: Cleartext
+        psk: none             # no encryption
     on_packet:
+      # Raw escape hatch: fires for every decoded packet.
       - logger.log:
           format: "Packet !%08x->!%08x portnum=%u len=%u rssi=%.0f snr=%.1f"
           args: ['from', 'to', 'portnum', '(unsigned) payload.size()', 'rssi', 'snr']
     on_text:
       - logger.log:
-          format: "Mesh text from !%08x (ch %s): %s"
+          format: "Text from !%08x (ch %s): %s"
           args: ['from', 'channel.c_str()', 'text.c_str()']
     on_nodeinfo:
       - logger.log:
-          format: "NodeInfo !%08x (ch %s): %s (%s) role=%s"
-          args: ['from', 'channel.c_str()', 'long_name.c_str()', 'short_name.c_str()', 'role.c_str()']
+          format: "NodeInfo !%08x (ch %s): %s (%s) role=%s rssi=%.0f"
+          args: ['from', 'channel.c_str()', 'long_name.c_str()', 'short_name.c_str()', 'role.c_str()', 'rssi']
     on_position:
       - logger.log:
-          format: "Position !%08x (ch %s): %.6f, %.6f (%dm)"
-          args: ['from', 'channel.c_str()', 'latitude', 'longitude', 'altitude']
+          format: "Position !%08x (ch %s): %.6f, %.6f %dm prec=%u"
+          args: ['from', 'channel.c_str()', 'latitude', 'longitude', 'altitude', 'precision_bits']
     on_telemetry:
       - logger.log:
-          format: "Telemetry !%08x (ch %s): batt=%u pct, %.2fV"
-          args: ['from', 'channel.c_str()', 'battery_level', 'voltage']
+          format: "Telemetry !%08x (ch %s): batt=%u pct %.2fV up=%us"
+          args: ['from', 'channel.c_str()', 'battery_level', 'voltage', 'uptime_seconds']
 
 button:
   - platform: template
-    name: "Send Mesh Hello"
+    name: "Send text"
     on_press:
       - meshtastic.send_text:
-          text: "hello from esphome"
-          channel: LongFast
+          text: "hello mesh"
+          channel: LongFast      # by name; omit for primary
+          to: 0xFFFFFFFF         # omit for broadcast (^all)
+          want_ack: false
+
+  - platform: template
+    name: "Send device telemetry"
+    on_press:
+      - meshtastic.send_telemetry:
+          battery_level: 87
+          voltage: 3.92
+          channel_utilization: 12.5
+          air_util_tx: 3.1
+          uptime_seconds: !lambda return (uint32_t) (esphome::millis() / 1000);
+
+  - platform: template
+    name: "Re-broadcast NodeInfo"
+    on_press:
+      - meshtastic.send_node_info:
+
+  - platform: template
+    name: "Send environment"
+    on_press:
+      # Every EnvironmentMetrics field is optional; only the ones set are sent.
+      - meshtastic.send_environment_metrics:
+          temperature: 21.5
+          relative_humidity: 48.0
+          barometric_pressure: 1013.2
+          gas_resistance: 50000
+          voltage: 3.9
+          current: 0.12
+          distance: 1.5
+          lux: 350
+          white_lux: 360
+          ir_lux: 40
+          uv_lux: 12
+          wind_direction: 270
+          wind_speed: 3.4
+          wind_gust: 5.1
+          wind_lull: 2.0
+          weight: 12.3
+          radiation: 0.08
+          rainfall_1h: 0.2
+          rainfall_24h: 4.8
+          soil_moisture: 38
+          soil_temperature: 14.2
+          iaq: 75
+          one_wire_temperature: [21.5, 22.0, 19.8]   # up to 8
+
+uart:
+  - id: gps_uart
+    rx_pin: GPIO44
+    tx_pin: GPIO43
+    baud_rate: 9600
+gps:
+  id: my_gps
+  uart_id: gps_uart
+  latitude:
+    id: gps_lat
+  longitude:
+    id: gps_lon
+  altitude:
+    id: gps_alt
+interval:
+  - interval: 5min
+    then:
+      - meshtastic.send_position:
+          latitude: !lambda return id(gps_lat).state;
+          longitude: !lambda return id(gps_lon).state;
+          altitude: !lambda return (int) id(gps_alt).state;
+          precision_bits: 32      # < 32 coarsens our location
