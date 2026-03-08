@@ -2,6 +2,7 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
+#include "channel.h"
 #include "protocol.h"
 #include <string>
 #include <vector>
@@ -33,6 +34,7 @@ class Meshtastic : public Component
   void set_long_name(const std::string &name) { this->long_name_ = name; }
   void set_short_name(const std::string &name) { this->short_name_ = name; }
   void set_node_num(uint32_t num) { this->node_num_ = num; }
+  void add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink);
 
 #ifdef USE_SX126X
   void set_radio(sx126x::SX126x *radio);
@@ -49,6 +51,7 @@ class Meshtastic : public Component
   std::string long_name_;
   std::string short_name_;
   uint32_t node_num_{0};
+  std::vector<Channel> channels_;
 
 #ifdef USE_SX126X
   sx126x::SX126x *sx126x_{nullptr};

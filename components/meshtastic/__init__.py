@@ -1,7 +1,10 @@
+import base64
+import binascii
+
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import sx126x, sx127x
-from esphome.const import CONF_ID
+from esphome.const import CONF_ID, CONF_NAME
 
 CODEOWNERS = ["@USA-RedDragon"]
 MULTI_CONF = True
@@ -10,9 +13,69 @@ CONF_RADIO = "radio"
 CONF_LONG_NAME = "long_name"
 CONF_SHORT_NAME = "short_name"
 CONF_NODE_NUM = "node_num"
+CONF_CHANNELS = "channels"
+CONF_PSK = "psk"
+CONF_UPLINK = "uplink"
+CONF_DOWNLINK = "downlink"
+
+# Meshtastic's well-known default channel key ("AQ==" index 1 expands to this).
+DEFAULT_PSK = list(base64.b64decode("1PG7OiApB1nwvP+rz05pAQ=="))
 
 meshtastic_ns = cg.esphome_ns.namespace("meshtastic")
 Meshtastic = meshtastic_ns.class_("Meshtastic", cg.Component)
+
+
+def _expand_psk_index(idx):
+    if idx == 0:
+        return []
+    if idx == 1:
+        return list(DEFAULT_PSK)
+    if 2 <= idx <= 10:
+        key = list(DEFAULT_PSK)
+        key[-1] = (key[-1] + idx - 1) & 0xFF
+        return key
+    raise cv.Invalid(f"PSK index must be 0-10, got {idx}")
+
+
+def validate_psk(value):
+    if isinstance(value, int):
+        return _expand_psk_index(value)
+    if not isinstance(value, str):
+        raise cv.Invalid("psk must be a string or an index 0-10")
+    text = value.strip()
+    low = text.lower()
+    if low == "none":
+        return []
+    if low == "default":
+        return list(DEFAULT_PSK)
+    try:
+        return _expand_psk_index(int(text, 0))
+    except ValueError:
+        pass
+    hexstr = text[2:] if low.startswith("0x") else text
+    if len(hexstr) in (32, 64) and all(c in "0123456789abcdefABCDEF" for c in hexstr):
+        return list(bytes.fromhex(hexstr))
+    try:
+        raw = base64.b64decode(text, validate=True)
+    except (binascii.Error, ValueError):
+        raise cv.Invalid("psk must be 'none', 'default', an index 0-10, hex, or base64 (16/32 bytes)")
+    if len(raw) == 0:
+        return []
+    if len(raw) == 1:
+        return _expand_psk_index(raw[0])
+    if len(raw) in (16, 32):
+        return list(raw)
+    raise cv.Invalid("psk base64 must decode to 1, 16, or 32 bytes")
+
+
+CHANNEL_SCHEMA = cv.Schema(
+    {
+        cv.Required(CONF_NAME): cv.All(cv.string, cv.Length(max=11)),
+        cv.Optional(CONF_PSK, default="default"): validate_psk,
+        cv.Optional(CONF_UPLINK, default=False): cv.boolean,
+        cv.Optional(CONF_DOWNLINK, default=False): cv.boolean,
+    }
+)
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -23,6 +86,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_LONG_NAME): cv.All(cv.string, cv.Length(max=40)),
         cv.Optional(CONF_SHORT_NAME): cv.All(cv.string, cv.Length(max=4)),
         cv.Optional(CONF_NODE_NUM): cv.hex_uint32_t,
+        cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -41,3 +105,6 @@ async def to_code(config):
         cg.add(var.set_short_name(config[CONF_SHORT_NAME]))
     if CONF_NODE_NUM in config:
         cg.add(var.set_node_num(config[CONF_NODE_NUM]))
+
+    for ch in config.get(CONF_CHANNELS, []):
+        cg.add(var.add_channel(ch[CONF_NAME], ch[CONF_PSK], ch[CONF_UPLINK], ch[CONF_DOWNLINK]))

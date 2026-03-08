@@ -60,3 +60,8 @@ meshtastic:
     long_name: "ESP32S3"
     short_name: "ESPS"
     node_num: 0xDEAD
+    channels:
+      - name: LongFast
+        psk: AQ==
+        uplink: false
+        downlink: false
