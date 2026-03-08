@@ -114,6 +114,33 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
       continue;
     ESP_LOGD(TAG, "  decoded on \"%s\": portnum=%d payload=%uB", ch.name.c_str(), (int) data.portnum,
              (unsigned) data.payload.size);
+
+    if (h.from != 0 && h.from != this->node_num_) {
+      bool is_new = false;
+      meshtastic_NodeInfoLite *node = this->nodedb_.get_or_create(h.from, &is_new);
+      node->num = h.from;
+      node->snr = snr;
+      node->last_heard = millis();
+      node->has_hops_away = true;
+      node->hops_away = (h.hop_start >= h.hop_limit) ? (h.hop_start - h.hop_limit) : 0;
+      if (data.portnum == meshtastic_PortNum_NODEINFO_APP) {
+        meshtastic_User user = meshtastic_User_init_zero;
+        pb_istream_t us = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+        if (pb_decode(&us, meshtastic_User_fields, &user)) {
+          node->has_user = true;
+          memcpy(node->user.long_name, user.long_name, sizeof(node->user.long_name));
+          memcpy(node->user.short_name, user.short_name, sizeof(node->user.short_name));
+          node->user.hw_model = user.hw_model;
+          node->user.role = user.role;
+          node->user.is_licensed = user.is_licensed;
+          ESP_LOGD(TAG, "  node !%08x \"%s\" (%s) %s [%u known]", h.from, node->user.long_name, node->user.short_name,
+                   is_new ? "NEW" : "updated", (unsigned) this->nodedb_.size());
+        }
+      } else if (is_new) {
+        ESP_LOGD(TAG, "  node !%08x heard (awaiting NodeInfo) [%u known]", h.from, (unsigned) this->nodedb_.size());
+      }
+    }
+
     if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP)
       ESP_LOGD(TAG, "  text: %.*s", (int) data.payload.size, (const char *) data.payload.bytes);
     return;

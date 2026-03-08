@@ -3,6 +3,7 @@
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
 #include "channel.h"
+#include "nodedb.h"
 #include "protocol.h"
 #include "router.h"
 #include <string>
@@ -39,6 +40,7 @@ class Meshtastic : public Component
   void set_hop_limit(uint8_t hop_limit) { this->hop_limit_ = hop_limit; }
   void set_node_info_interval(uint32_t interval_ms) { this->node_info_interval_ = interval_ms; }
   void set_hw_model(uint32_t hw_model) { this->hw_model_ = hw_model; }
+  void set_node_db_size(uint32_t size) { this->nodedb_.set_max_nodes(size); }
   void add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink);
 
 #ifdef USE_SX126X
@@ -70,6 +72,7 @@ class Meshtastic : public Component
   uint32_t hw_model_{39};  // meshtastic_HardwareModel_DIY_V1
   std::vector<Channel> channels_;
   PacketDedup dedup_;
+  NodeDb nodedb_;
 
 #ifdef USE_SX126X
   sx126x::SX126x *sx126x_{nullptr};

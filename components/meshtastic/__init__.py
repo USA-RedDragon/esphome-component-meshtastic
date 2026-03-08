@@ -5,6 +5,7 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import sx126x, sx127x
 from esphome.const import CONF_ID, CONF_NAME
+from esphome.core import CORE
 
 from . import _enums
 
@@ -23,8 +24,17 @@ CONF_ROLE = "role"
 CONF_HOP_LIMIT = "hop_limit"
 CONF_NODE_INFO_INTERVAL = "node_info_interval"
 CONF_HW_MODEL = "hw_model"
+CONF_NODE_DB_SIZE = "node_db_size"
 
 MIN_NODE_INFO_INTERVAL_MS = 60 * 60 * 1000
+
+
+def default_node_db_size():
+    if CORE.is_esp8266:
+        return 40
+    if CORE.is_esp32:
+        return 100
+    return 80
 
 
 def validate_node_info_interval(value):
@@ -105,6 +115,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_HOP_LIMIT, default=3): cv.int_range(min=0, max=7),
         cv.Optional(CONF_NODE_INFO_INTERVAL, default="3h"): validate_node_info_interval,
         cv.Optional(CONF_HW_MODEL, default="DIY_V1"): cv.enum(_enums.HARDWARE_MODELS, upper=True),
+        cv.Optional(CONF_NODE_DB_SIZE): cv.int_range(min=1, max=500),
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
 ).extend(cv.COMPONENT_SCHEMA)
@@ -128,6 +139,7 @@ async def to_code(config):
     cg.add(var.set_hop_limit(config[CONF_HOP_LIMIT]))
     cg.add(var.set_node_info_interval(config[CONF_NODE_INFO_INTERVAL]))
     cg.add(var.set_hw_model(config[CONF_HW_MODEL]))
+    cg.add(var.set_node_db_size(config.get(CONF_NODE_DB_SIZE) or default_node_db_size()))
 
     for ch in config.get(CONF_CHANNELS, []):
         cg.add(var.add_channel(ch[CONF_NAME], ch[CONF_PSK], ch[CONF_UPLINK], ch[CONF_DOWNLINK]))

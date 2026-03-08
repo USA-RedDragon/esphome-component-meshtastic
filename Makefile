@@ -3,8 +3,8 @@ PROTO_ROOT=./meshtastic-protobufs
 PROTO_DIR=$(PROTO_ROOT)/meshtastic
 PROTO_OUT=./components/meshtastic
 
-# Only the transitive imports reachable from mesh.proto + mqtt.proto
-PROTO_NAMES=atak channel config device_ui mesh module_config mqtt portnums telemetry xmodem
+# Transitive imports reachable from mesh.proto + mqtt.proto + deviceonly.proto.
+PROTO_NAMES=atak channel config device_ui deviceonly localonly mesh module_config mqtt portnums telemetry xmodem
 
 PROTO_FILES=$(addprefix $(PROTO_DIR)/,$(addsuffix .proto,$(PROTO_NAMES)))
 
@@ -27,11 +27,16 @@ proto-gen:
 		$(PROTO_FILES)
 	mv -f $(PROTO_OUT)/meshtastic/*.pb.c $(PROTO_OUT)/meshtastic/*.pb.h $(PROTO_OUT)/
 	rmdir $(PROTO_OUT)/meshtastic
+	@for h in $(PROTO_OUT)/*.pb.h; do \
+		if grep -q '#include <vector>' "$$h" && [ -f "$${h%.h}.c" ]; then \
+			mv "$${h%.h}.c" "$${h%.h}.cpp"; \
+		fi; \
+	done
 	@echo "Protobuf generation complete"
 
 proto-clean:
 	@echo "Cleaning generated protobuf files..."
-	@rm -f $(PROTO_OUT)/*.pb.c $(PROTO_OUT)/*.pb.h
+	@rm -f $(PROTO_OUT)/*.pb.c $(PROTO_OUT)/*.pb.h $(PROTO_OUT)/*.pb.cpp
 	@echo "Protobuf files cleaned"
 
 gen: proto-gen
