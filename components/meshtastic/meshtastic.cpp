@@ -1,7 +1,7 @@
 #include "meshtastic.h"
 #include "esphome/core/helpers.h"
 
-#include "proto/meshtastic/mesh.pb.h"
+#include "mesh.pb.h"
 #include <pb_decode.h>
 
 namespace esphome {
