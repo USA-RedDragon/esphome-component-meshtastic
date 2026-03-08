@@ -44,7 +44,7 @@ gen: proto-gen
 	python3 scripts/gen_enums.py --proto-root $(PROTO_ROOT) --out components/meshtastic/_enums.py
 
 gen-clean:
-	@echo "Cleaning generated YAML enums..."
-	@rm -f components/meshtastic/_enums.py
-	@echo "YAML enums cleaned"
+	@echo "Cleaning generated enums..."
+	@rm -f components/meshtastic/_enums.py components/meshtastic/enum_names.h components/meshtastic/enum_names.cpp
+	@echo "Generated enums cleaned"
 
