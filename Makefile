@@ -1,4 +1,4 @@
-.PHONY: proto-gen proto-clean
+.PHONY: gen proto-gen proto-clean
 PROTO_ROOT=./meshtastic-protobufs
 PROTO_DIR=$(PROTO_ROOT)/meshtastic
 PROTO_OUT=./components/meshtastic/proto
@@ -20,6 +20,10 @@ proto-gen:
 		--nanopb_out=$(PROTO_OUT) \
 		$(PROTO_FILES)
 	@echo "Protobuf generation complete"
+
+gen: proto-gen
+	@echo "Generating YAML enums..."
+	python3 scripts/gen_enums.py --proto-root $(PROTO_ROOT) --out components/meshtastic/_enums.py
 
 proto-clean:
 	@echo "Cleaning generated protobuf files..."
