@@ -6,6 +6,7 @@
 #include "mesh.pb.h"
 #include <pb_decode.h>
 #include <pb_encode.h>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -36,8 +37,8 @@ void Meshtastic::setup() {
     this->long_name_ = "Meshtastic " + this->short_name_;
 
   if (this->node_info_interval_ > 0) {
-    this->defer([this]() { this->broadcast_node_info_(); });
-    this->set_interval(this->node_info_interval_, [this]() { this->broadcast_node_info_(); });
+    this->defer([this]() { this->send_node_info(); });
+    this->set_interval(this->node_info_interval_, [this]() { this->send_node_info(); });
   }
 }
 
@@ -290,27 +291,98 @@ void Meshtastic::send_data_(uint32_t portnum, const uint8_t *payload, size_t pay
   this->transmit_(packet);
 }
 
-void Meshtastic::send_text(const std::string &text, uint32_t dest, const std::string &channel, bool want_ack) {
-  size_t channel_idx = 0;  // primary (first channel) by default
-  if (!channel.empty()) {
-    bool found = false;
-    for (size_t i = 0; i < this->channels_.size(); i++) {
-      if (this->channels_[i].name == channel) {
-        channel_idx = i;
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      ESP_LOGW(TAG, "send_text: unknown channel \"%s\"", channel.c_str());
-      return;
-    }
+int Meshtastic::find_channel_index_(const std::string &name) {
+  if (name.empty())
+    return 0;  // primary / first channel
+  for (size_t i = 0; i < this->channels_.size(); i++) {
+    if (this->channels_[i].name == name)
+      return (int) i;
   }
-  this->send_data_(meshtastic_PortNum_TEXT_MESSAGE_APP, (const uint8_t *) text.data(), text.size(), dest, channel_idx,
+  return -1;
+}
+
+void Meshtastic::send_text(const std::string &text, uint32_t dest, const std::string &channel, bool want_ack) {
+  const int idx = this->find_channel_index_(channel);
+  if (idx < 0) {
+    ESP_LOGW(TAG, "send_text: unknown channel \"%s\"", channel.c_str());
+    return;
+  }
+  this->send_data_(meshtastic_PortNum_TEXT_MESSAGE_APP, (const uint8_t *) text.data(), text.size(), dest, idx, want_ack);
+}
+
+void Meshtastic::send_position(double latitude, double longitude, int32_t altitude, uint32_t precision_bits,
+                               const std::string &channel, bool want_ack) {
+  const int idx = this->find_channel_index_(channel);
+  if (idx < 0) {
+    ESP_LOGW(TAG, "send_position: unknown channel \"%s\"", channel.c_str());
+    return;
+  }
+  meshtastic_Position pos = meshtastic_Position_init_zero;
+  int32_t lat_i = (int32_t) lround(latitude * 1e7);
+  int32_t lon_i = (int32_t) lround(longitude * 1e7);
+  if (precision_bits > 0 && precision_bits < 32) {
+    const uint32_t mask = 0xFFFFFFFFu << (32 - precision_bits);
+    lat_i = (int32_t) ((uint32_t) lat_i & mask);
+    lon_i = (int32_t) ((uint32_t) lon_i & mask);
+  }
+  pos.has_latitude_i = true;
+  pos.latitude_i = lat_i;
+  pos.has_longitude_i = true;
+  pos.longitude_i = lon_i;
+  pos.has_altitude = true;
+  pos.altitude = altitude;
+  pos.precision_bits = precision_bits;
+
+  uint8_t buf[meshtastic_Position_size];
+  pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
+  if (!pb_encode(&os, meshtastic_Position_fields, &pos)) {
+    ESP_LOGW(TAG, "Position encode failed");
+    return;
+  }
+  ESP_LOGD(TAG, "TX position %.6f, %.6f (prec=%ubits)", latitude, longitude, precision_bits);
+  this->send_data_(meshtastic_PortNum_POSITION_APP, buf, os.bytes_written, MESHTASTIC_BROADCAST_ADDR, idx, want_ack);
+}
+
+void Meshtastic::send_telemetry_(const meshtastic_Telemetry &tel, size_t channel_idx, bool want_ack) {
+  uint8_t buf[meshtastic_Telemetry_size];
+  pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
+  if (!pb_encode(&os, meshtastic_Telemetry_fields, &tel)) {
+    ESP_LOGW(TAG, "Telemetry encode failed");
+    return;
+  }
+  this->send_data_(meshtastic_PortNum_TELEMETRY_APP, buf, os.bytes_written, MESHTASTIC_BROADCAST_ADDR, channel_idx,
                    want_ack);
 }
 
-void Meshtastic::broadcast_node_info_() {
+void Meshtastic::send_device_metrics(const meshtastic_DeviceMetrics &metrics, const std::string &channel,
+                                     bool want_ack) {
+  const int idx = this->find_channel_index_(channel);
+  if (idx < 0) {
+    ESP_LOGW(TAG, "send_telemetry: unknown channel \"%s\"", channel.c_str());
+    return;
+  }
+  meshtastic_Telemetry tel = meshtastic_Telemetry_init_zero;
+  tel.which_variant = meshtastic_Telemetry_device_metrics_tag;
+  tel.variant.device_metrics = metrics;
+  ESP_LOGD(TAG, "TX device telemetry");
+  this->send_telemetry_(tel, idx, want_ack);
+}
+
+void Meshtastic::send_environment_metrics(const meshtastic_EnvironmentMetrics &metrics, const std::string &channel,
+                                          bool want_ack) {
+  const int idx = this->find_channel_index_(channel);
+  if (idx < 0) {
+    ESP_LOGW(TAG, "send_environment_metrics: unknown channel \"%s\"", channel.c_str());
+    return;
+  }
+  meshtastic_Telemetry tel = meshtastic_Telemetry_init_zero;
+  tel.which_variant = meshtastic_Telemetry_environment_metrics_tag;
+  tel.variant.environment_metrics = metrics;
+  ESP_LOGD(TAG, "TX environment telemetry");
+  this->send_telemetry_(tel, idx, want_ack);
+}
+
+void Meshtastic::send_node_info() {
   if (this->channels_.empty())
     return;
   meshtastic_User user = meshtastic_User_init_zero;

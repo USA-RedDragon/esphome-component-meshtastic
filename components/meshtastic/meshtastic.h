@@ -66,6 +66,12 @@ class Meshtastic : public Component
 
   void send_text(const std::string &text, uint32_t dest, const std::string &channel, bool want_ack);
 
+  void send_position(double latitude, double longitude, int32_t altitude, uint32_t precision_bits,
+                     const std::string &channel, bool want_ack);
+  void send_device_metrics(const meshtastic_DeviceMetrics &metrics, const std::string &channel, bool want_ack);
+  void send_environment_metrics(const meshtastic_EnvironmentMetrics &metrics, const std::string &channel, bool want_ack);
+  void send_node_info();
+
   void handle_rx(const std::vector<uint8_t> &packet, float rssi, float snr);
 
 #if defined(USE_SX126X) || defined(USE_SX127X)
@@ -77,7 +83,8 @@ class Meshtastic : public Component
   void transmit_(const std::vector<uint8_t> &packet);
   void send_data_(uint32_t portnum, const uint8_t *payload, size_t payload_len, uint32_t dest, size_t channel_idx,
                   bool want_ack);
-  void broadcast_node_info_();
+  int find_channel_index_(const std::string &name);
+  void send_telemetry_(const meshtastic_Telemetry &tel, size_t channel_idx, bool want_ack);
 
   std::string long_name_;
   std::string short_name_;

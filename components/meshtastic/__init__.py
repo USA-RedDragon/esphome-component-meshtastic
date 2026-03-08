@@ -35,6 +35,40 @@ CONF_TEXT = "text"
 CONF_CHANNEL = "channel"
 CONF_TO = "to"
 CONF_WANT_ACK = "want_ack"
+# send_position
+CONF_LATITUDE = "latitude"
+CONF_LONGITUDE = "longitude"
+CONF_ALTITUDE = "altitude"
+CONF_PRECISION_BITS = "precision_bits"
+# send_telemetry
+CONF_BATTERY_LEVEL = "battery_level"
+CONF_VOLTAGE = "voltage"
+CONF_CHANNEL_UTILIZATION = "channel_utilization"
+CONF_AIR_UTIL_TX = "air_util_tx"
+CONF_UPTIME_SECONDS = "uptime_seconds"
+# send_environment_metrics
+CONF_TEMPERATURE = "temperature"
+CONF_RELATIVE_HUMIDITY = "relative_humidity"
+CONF_BAROMETRIC_PRESSURE = "barometric_pressure"
+CONF_GAS_RESISTANCE = "gas_resistance"
+CONF_CURRENT = "current"
+CONF_IAQ = "iaq"
+CONF_DISTANCE = "distance"
+CONF_LUX = "lux"
+CONF_WHITE_LUX = "white_lux"
+CONF_IR_LUX = "ir_lux"
+CONF_UV_LUX = "uv_lux"
+CONF_WIND_DIRECTION = "wind_direction"
+CONF_WIND_SPEED = "wind_speed"
+CONF_WIND_GUST = "wind_gust"
+CONF_WIND_LULL = "wind_lull"
+CONF_WEIGHT = "weight"
+CONF_RADIATION = "radiation"
+CONF_RAINFALL_1H = "rainfall_1h"
+CONF_RAINFALL_24H = "rainfall_24h"
+CONF_SOIL_MOISTURE = "soil_moisture"
+CONF_SOIL_TEMPERATURE = "soil_temperature"
+CONF_ONE_WIRE_TEMPERATURE = "one_wire_temperature"
 
 MIN_NODE_INFO_INTERVAL_MS = 60 * 60 * 1000
 
@@ -88,6 +122,10 @@ TelemetryTrigger = meshtastic_ns.class_(
     ),
 )
 SendTextAction = meshtastic_ns.class_("SendTextAction", automation.Action)
+SendPositionAction = meshtastic_ns.class_("SendPositionAction", automation.Action)
+SendTelemetryAction = meshtastic_ns.class_("SendTelemetryAction", automation.Action)
+SendEnvironmentMetricsAction = meshtastic_ns.class_("SendEnvironmentMetricsAction", automation.Action)
+SendNodeInfoAction = meshtastic_ns.class_("SendNodeInfoAction", automation.Action)
 
 
 @automation.register_action(
@@ -111,6 +149,134 @@ async def send_text_to_code(config, action_id, template_arg, args):
     cg.add(var.set_dest(await cg.templatable(config[CONF_TO], args, cg.uint32)))
     cg.add(var.set_want_ack(await cg.templatable(config[CONF_WANT_ACK], args, cg.bool_)))
     return var
+
+
+# Common channel/want_ack fields for the origination actions.
+_SEND_BASE = {
+    cv.GenerateID(): cv.use_id(Meshtastic),
+    cv.Optional(CONF_CHANNEL, default=""): cv.templatable(cv.string),
+    cv.Optional(CONF_WANT_ACK, default=False): cv.templatable(cv.boolean),
+}
+
+
+async def _add_channel_want_ack(var, config, args):
+    cg.add(var.set_channel(await cg.templatable(config[CONF_CHANNEL], args, cg.std_string)))
+    cg.add(var.set_want_ack(await cg.templatable(config[CONF_WANT_ACK], args, cg.bool_)))
+
+
+@automation.register_action(
+    "meshtastic.send_position",
+    SendPositionAction,
+    cv.Schema(
+        {
+            **_SEND_BASE,
+            cv.Required(CONF_LATITUDE): cv.templatable(cv.float_),
+            cv.Required(CONF_LONGITUDE): cv.templatable(cv.float_),
+            cv.Optional(CONF_ALTITUDE, default=0): cv.templatable(cv.int_),
+            cv.Optional(CONF_PRECISION_BITS, default=32): cv.templatable(cv.int_range(min=0, max=32)),
+        }
+    ),
+    synchronous=True,
+)
+async def send_position_to_code(config, action_id, template_arg, args):
+    var = cg.new_Pvariable(action_id, template_arg, await cg.get_variable(config[CONF_ID]))
+    cg.add(var.set_latitude(await cg.templatable(config[CONF_LATITUDE], args, cg.double)))
+    cg.add(var.set_longitude(await cg.templatable(config[CONF_LONGITUDE], args, cg.double)))
+    cg.add(var.set_altitude(await cg.templatable(config[CONF_ALTITUDE], args, cg.int32)))
+    cg.add(var.set_precision_bits(await cg.templatable(config[CONF_PRECISION_BITS], args, cg.uint32)))
+    await _add_channel_want_ack(var, config, args)
+    return var
+
+
+@automation.register_action(
+    "meshtastic.send_telemetry",
+    SendTelemetryAction,
+    cv.Schema(
+        {
+            **_SEND_BASE,
+            cv.Optional(CONF_BATTERY_LEVEL): cv.templatable(cv.int_range(min=0, max=100)),
+            cv.Optional(CONF_VOLTAGE): cv.templatable(cv.float_),
+            cv.Optional(CONF_CHANNEL_UTILIZATION): cv.templatable(cv.float_),
+            cv.Optional(CONF_AIR_UTIL_TX): cv.templatable(cv.float_),
+            cv.Optional(CONF_UPTIME_SECONDS): cv.templatable(cv.uint32_t),
+        }
+    ),
+    synchronous=True,
+)
+async def send_telemetry_to_code(config, action_id, template_arg, args):
+    var = cg.new_Pvariable(action_id, template_arg, await cg.get_variable(config[CONF_ID]))
+    if CONF_BATTERY_LEVEL in config:
+        cg.add(var.set_battery_level(await cg.templatable(config[CONF_BATTERY_LEVEL], args, cg.uint32)))
+    if CONF_VOLTAGE in config:
+        cg.add(var.set_voltage(await cg.templatable(config[CONF_VOLTAGE], args, cg.float_)))
+    if CONF_CHANNEL_UTILIZATION in config:
+        cg.add(var.set_channel_utilization(await cg.templatable(config[CONF_CHANNEL_UTILIZATION], args, cg.float_)))
+    if CONF_AIR_UTIL_TX in config:
+        cg.add(var.set_air_util_tx(await cg.templatable(config[CONF_AIR_UTIL_TX], args, cg.float_)))
+    if CONF_UPTIME_SECONDS in config:
+        cg.add(var.set_uptime_seconds(await cg.templatable(config[CONF_UPTIME_SECONDS], args, cg.uint32)))
+    await _add_channel_want_ack(var, config, args)
+    return var
+
+
+_ENV_FIELDS = [
+    (CONF_TEMPERATURE, "set_temperature", cv.float_, cg.float_),
+    (CONF_RELATIVE_HUMIDITY, "set_relative_humidity", cv.float_, cg.float_),
+    (CONF_BAROMETRIC_PRESSURE, "set_barometric_pressure", cv.float_, cg.float_),
+    (CONF_GAS_RESISTANCE, "set_gas_resistance", cv.float_, cg.float_),
+    (CONF_VOLTAGE, "set_voltage", cv.float_, cg.float_),
+    (CONF_CURRENT, "set_current", cv.float_, cg.float_),
+    (CONF_DISTANCE, "set_distance", cv.float_, cg.float_),
+    (CONF_LUX, "set_lux", cv.float_, cg.float_),
+    (CONF_WHITE_LUX, "set_white_lux", cv.float_, cg.float_),
+    (CONF_IR_LUX, "set_ir_lux", cv.float_, cg.float_),
+    (CONF_UV_LUX, "set_uv_lux", cv.float_, cg.float_),
+    (CONF_WIND_SPEED, "set_wind_speed", cv.float_, cg.float_),
+    (CONF_WIND_GUST, "set_wind_gust", cv.float_, cg.float_),
+    (CONF_WIND_LULL, "set_wind_lull", cv.float_, cg.float_),
+    (CONF_WEIGHT, "set_weight", cv.float_, cg.float_),
+    (CONF_RADIATION, "set_radiation", cv.float_, cg.float_),
+    (CONF_RAINFALL_1H, "set_rainfall_1h", cv.float_, cg.float_),
+    (CONF_RAINFALL_24H, "set_rainfall_24h", cv.float_, cg.float_),
+    (CONF_SOIL_TEMPERATURE, "set_soil_temperature", cv.float_, cg.float_),
+    (CONF_IAQ, "set_iaq", cv.int_range(min=0, max=65535), cg.uint32),
+    (CONF_WIND_DIRECTION, "set_wind_direction", cv.int_range(min=0, max=359), cg.uint32),
+    (CONF_SOIL_MOISTURE, "set_soil_moisture", cv.int_range(min=0, max=100), cg.uint32),
+]
+
+
+@automation.register_action(
+    "meshtastic.send_environment_metrics",
+    SendEnvironmentMetricsAction,
+    cv.Schema(
+        {
+            **_SEND_BASE,
+            **{cv.Optional(conf): cv.templatable(validator) for conf, _s, validator, _t in _ENV_FIELDS},
+            cv.Optional(CONF_ONE_WIRE_TEMPERATURE): cv.templatable(cv.ensure_list(cv.float_)),
+        }
+    ),
+    synchronous=True,
+)
+async def send_environment_metrics_to_code(config, action_id, template_arg, args):
+    var = cg.new_Pvariable(action_id, template_arg, await cg.get_variable(config[CONF_ID]))
+    for conf, setter, _validator, typ in _ENV_FIELDS:
+        if conf in config:
+            cg.add(getattr(var, setter)(await cg.templatable(config[conf], args, typ)))
+    if CONF_ONE_WIRE_TEMPERATURE in config:
+        templ = await cg.templatable(config[CONF_ONE_WIRE_TEMPERATURE], args, cg.std_vector.template(cg.float_))
+        cg.add(var.set_one_wire_temperature(templ))
+    await _add_channel_want_ack(var, config, args)
+    return var
+
+
+@automation.register_action(
+    "meshtastic.send_node_info",
+    SendNodeInfoAction,
+    cv.Schema({cv.GenerateID(): cv.use_id(Meshtastic)}),
+    synchronous=True,
+)
+async def send_node_info_to_code(config, action_id, template_arg, args):
+    return cg.new_Pvariable(action_id, template_arg, await cg.get_variable(config[CONF_ID]))
 
 
 def _expand_psk_index(idx):
