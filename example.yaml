@@ -1,0 +1,59 @@
+esphome:
+  name: meshtastic
+  friendly_name: meshtastic
+
+esp32:
+  board: seeed_xiao_esp32s3
+  variant: esp32s3
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: True
+
+external_components:
+  - source: github://USA-RedDragon/esphome-component-meshtastic@main
+    components: [meshtastic]
+
+spi:
+  clk_pin: GPIO7
+  miso_pin: GPIO8
+  mosi_pin: GPIO9
+
+sx126x:
+  id: id_sx126x
+  busy_pin: GPIO4
+  cs_pin: GPIO1
+  dio1_pin: GPIO5
+  rst_pin: GPIO2
+  frequency: 906875000
+  hw_version: sx1262
+  modulation: LORA
+  pa_power: 22
+  pa_ramp: 200us
+  rf_switch: true
+  rx_start: true
+  tcxo_delay: 5ms
+  tcxo_voltage: 1_8V
+
+  bandwidth: 250_0kHz
+  crc_enable: true
+  preamble_size: 16
+  spreading_factor: 11
+  coding_rate: CR_4_5
+  sync_value: [0x24, 0xb4]
+
+meshtastic:
+  - radio: id_sx126x
