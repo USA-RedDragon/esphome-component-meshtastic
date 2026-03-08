@@ -62,6 +62,7 @@ meshtastic:
     node_num: 0xDEAD
     role: CLIENT
     hop_limit: 3
+    node_info_interval: 3h
     hw_model: DIY_V1
     channels:
       - name: LongFast

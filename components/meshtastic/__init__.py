@@ -21,7 +21,17 @@ CONF_UPLINK = "uplink"
 CONF_DOWNLINK = "downlink"
 CONF_ROLE = "role"
 CONF_HOP_LIMIT = "hop_limit"
+CONF_NODE_INFO_INTERVAL = "node_info_interval"
 CONF_HW_MODEL = "hw_model"
+
+MIN_NODE_INFO_INTERVAL_MS = 60 * 60 * 1000
+
+
+def validate_node_info_interval(value):
+    value = cv.positive_time_period_milliseconds(value)
+    if value.total_milliseconds < MIN_NODE_INFO_INTERVAL_MS:
+        raise cv.Invalid("node_info_interval must be at least 1h (Meshtastic minimum)")
+    return value
 
 # Meshtastic's well-known default channel key ("AQ==" index 1 expands to this).
 DEFAULT_PSK = list(base64.b64decode("1PG7OiApB1nwvP+rz05pAQ=="))
@@ -93,6 +103,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_NODE_NUM): cv.hex_uint32_t,
         cv.Optional(CONF_ROLE, default="CLIENT"): cv.enum(_enums.ROLES, upper=True),
         cv.Optional(CONF_HOP_LIMIT, default=3): cv.int_range(min=0, max=7),
+        cv.Optional(CONF_NODE_INFO_INTERVAL, default="3h"): validate_node_info_interval,
         cv.Optional(CONF_HW_MODEL, default="DIY_V1"): cv.enum(_enums.HARDWARE_MODELS, upper=True),
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
@@ -115,6 +126,7 @@ async def to_code(config):
         cg.add(var.set_node_num(config[CONF_NODE_NUM]))
     cg.add(var.set_role(config[CONF_ROLE]))
     cg.add(var.set_hop_limit(config[CONF_HOP_LIMIT]))
+    cg.add(var.set_node_info_interval(config[CONF_NODE_INFO_INTERVAL]))
     cg.add(var.set_hw_model(config[CONF_HW_MODEL]))
 
     for ch in config.get(CONF_CHANNELS, []):

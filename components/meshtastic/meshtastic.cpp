@@ -6,6 +6,7 @@
 #include <pb_decode.h>
 #include <pb_encode.h>
 #include <cstdio>
+#include <cstring>
 
 namespace esphome {
 namespace meshtastic {
@@ -32,6 +33,13 @@ void Meshtastic::setup() {
     this->short_name_ = str_snprintf("%04x", 4, this->node_num_ & 0xFFFF);
   if (this->long_name_.empty())
     this->long_name_ = "Meshtastic " + this->short_name_;
+
+#if defined(USE_SX126X) || defined(USE_SX127X)
+  if (this->node_info_interval_ > 0) {
+    this->defer([this]() { this->broadcast_node_info_(); });
+    this->set_interval(this->node_info_interval_, [this]() { this->broadcast_node_info_(); });
+  }
+#endif
 }
 
 void Meshtastic::dump_config() {
@@ -188,6 +196,26 @@ void Meshtastic::send_data_(uint32_t portnum, const uint8_t *payload, size_t pay
   this->dedup_.is_duplicate(this->node_num_, id, millis());  // remember our own packet
   ESP_LOGD(TAG, "TX portnum=%u to=!%08x id=0x%08x %uB", portnum, dest, id, (unsigned) packet.size());
   this->transmit_(packet);
+}
+
+void Meshtastic::broadcast_node_info_() {
+  if (this->channels_.empty())
+    return;
+  meshtastic_User user = meshtastic_User_init_zero;
+  snprintf(user.id, sizeof(user.id), "!%08x", this->node_num_);
+  strncpy(user.long_name, this->long_name_.c_str(), sizeof(user.long_name) - 1);
+  strncpy(user.short_name, this->short_name_.c_str(), sizeof(user.short_name) - 1);
+  user.hw_model = (meshtastic_HardwareModel) this->hw_model_;
+  user.role = (meshtastic_Config_DeviceConfig_Role) this->role_;
+
+  uint8_t buf[meshtastic_User_size];
+  pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
+  if (!pb_encode(&os, meshtastic_User_fields, &user)) {
+    ESP_LOGW(TAG, "User encode failed");
+    return;
+  }
+  ESP_LOGD(TAG, "Broadcasting NodeInfo");
+  this->send_data_(meshtastic_PortNum_NODEINFO_APP, buf, os.bytes_written, MESHTASTIC_BROADCAST_ADDR, 0, false);
 }
 #endif
 

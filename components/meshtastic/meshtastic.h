@@ -37,6 +37,7 @@ class Meshtastic : public Component
   void set_node_num(uint32_t num) { this->node_num_ = num; }
   void set_role(uint32_t role) { this->role_ = role; }
   void set_hop_limit(uint8_t hop_limit) { this->hop_limit_ = hop_limit; }
+  void set_node_info_interval(uint32_t interval_ms) { this->node_info_interval_ = interval_ms; }
   void set_hw_model(uint32_t hw_model) { this->hw_model_ = hw_model; }
   void add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink);
 
@@ -57,6 +58,7 @@ class Meshtastic : public Component
   void transmit_(const std::vector<uint8_t> &packet);
   void send_data_(uint32_t portnum, const uint8_t *payload, size_t payload_len, uint32_t dest, size_t channel_idx,
                   bool want_ack);
+  void broadcast_node_info_();
 #endif
 
   std::string long_name_;
@@ -64,6 +66,7 @@ class Meshtastic : public Component
   uint32_t node_num_{0};
   uint32_t role_{0};  // meshtastic_Config_DeviceConfig_Role_CLIENT
   uint8_t hop_limit_{3};
+  uint32_t node_info_interval_{10800000};  // 3 hours
   uint32_t hw_model_{39};  // meshtastic_HardwareModel_DIY_V1
   std::vector<Channel> channels_;
   PacketDedup dedup_;
