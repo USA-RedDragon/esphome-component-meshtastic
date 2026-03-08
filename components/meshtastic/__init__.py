@@ -280,22 +280,22 @@ async def send_node_info_to_code(config, action_id, template_arg, args):
 
 
 def _expand_psk_index(idx):
+    # Meshtastic 1-byte PSK: 0 = no encryption, otherwise the default key with its last byte
+    # bumped by (idx - 1). Any byte value 0-255 is valid (idx 1 == the unmodified default key).
     if idx == 0:
         return []
-    if idx == 1:
-        return list(DEFAULT_PSK)
-    if 2 <= idx <= 10:
+    if 1 <= idx <= 255:
         key = list(DEFAULT_PSK)
         key[-1] = (key[-1] + idx - 1) & 0xFF
         return key
-    raise cv.Invalid(f"PSK index must be 0-10, got {idx}")
+    raise cv.Invalid(f"PSK index must be 0-255, got {idx}")
 
 
 def validate_psk(value):
     if isinstance(value, int):
         return _expand_psk_index(value)
     if not isinstance(value, str):
-        raise cv.Invalid("psk must be a string or an index 0-10")
+        raise cv.Invalid("psk must be a string or an index 0-255")
     text = value.strip()
     low = text.lower()
     if low == "none":
@@ -312,7 +312,7 @@ def validate_psk(value):
     try:
         raw = base64.b64decode(text, validate=True)
     except (binascii.Error, ValueError):
-        raise cv.Invalid("psk must be 'none', 'default', an index 0-10, hex, or base64 (16/32 bytes)")
+        raise cv.Invalid("psk must be 'none', 'default', an index 0-255, hex, or base64 (16/32 bytes)")
     if len(raw) == 0:
         return []
     if len(raw) == 1:
