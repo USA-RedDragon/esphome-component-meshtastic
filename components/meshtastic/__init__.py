@@ -71,15 +71,21 @@ TextTrigger = meshtastic_ns.class_(
 )
 NodeInfoTrigger = meshtastic_ns.class_(
     "NodeInfoTrigger",
-    automation.Trigger.template(cg.uint32, cg.std_string, cg.std_string, cg.uint32, cg.uint32),
+    automation.Trigger.template(
+        cg.uint32, cg.std_string, cg.std_string, cg.std_string, cg.std_string, cg.std_string, cg.float_, cg.float_
+    ),
 )
 PositionTrigger = meshtastic_ns.class_(
     "PositionTrigger",
-    automation.Trigger.template(cg.uint32, cg.double, cg.double, cg.int32, cg.uint32, cg.float_, cg.float_),
+    automation.Trigger.template(
+        cg.uint32, cg.std_string, cg.double, cg.double, cg.int32, cg.uint32, cg.uint32, cg.float_, cg.float_
+    ),
 )
 TelemetryTrigger = meshtastic_ns.class_(
     "TelemetryTrigger",
-    automation.Trigger.template(cg.uint32, cg.uint32, cg.float_, cg.float_, cg.float_, cg.uint32),
+    automation.Trigger.template(
+        cg.uint32, cg.std_string, cg.uint32, cg.float_, cg.float_, cg.float_, cg.uint32, cg.float_, cg.float_
+    ),
 )
 SendTextAction = meshtastic_ns.class_("SendTextAction", automation.Action)
 
@@ -251,10 +257,13 @@ async def to_code(config):
             trigger,
             [
                 (cg.uint32, "from"),
+                (cg.std_string, "channel"),
                 (cg.std_string, "long_name"),
                 (cg.std_string, "short_name"),
-                (cg.uint32, "hw_model"),
-                (cg.uint32, "role"),
+                (cg.std_string, "hw_model"),
+                (cg.std_string, "role"),
+                (cg.float_, "rssi"),
+                (cg.float_, "snr"),
             ],
             conf,
         )
@@ -264,9 +273,11 @@ async def to_code(config):
             trigger,
             [
                 (cg.uint32, "from"),
+                (cg.std_string, "channel"),
                 (cg.double, "latitude"),
                 (cg.double, "longitude"),
                 (cg.int32, "altitude"),
+                (cg.uint32, "precision_bits"),
                 (cg.uint32, "time"),
                 (cg.float_, "rssi"),
                 (cg.float_, "snr"),
@@ -279,11 +290,14 @@ async def to_code(config):
             trigger,
             [
                 (cg.uint32, "from"),
+                (cg.std_string, "channel"),
                 (cg.uint32, "battery_level"),
                 (cg.float_, "voltage"),
                 (cg.float_, "channel_utilization"),
                 (cg.float_, "air_util_tx"),
                 (cg.uint32, "uptime_seconds"),
+                (cg.float_, "rssi"),
+                (cg.float_, "snr"),
             ],
             conf,
         )

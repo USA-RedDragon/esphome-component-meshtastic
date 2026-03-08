@@ -22,20 +22,24 @@ class TextTrigger : public Trigger<uint32_t, uint32_t, std::string, std::string,
   explicit TextTrigger(Meshtastic *parent) { parent->add_on_text_trigger(this); }
 };
 
-// NODEINFO_APP. (from, long_name, short_name, hw_model, role)
-class NodeInfoTrigger : public Trigger<uint32_t, std::string, std::string, uint32_t, uint32_t> {
+// NODEINFO_APP. (from, channel, long_name, short_name, hw_model name, role name, rssi, snr)
+class NodeInfoTrigger
+    : public Trigger<uint32_t, std::string, std::string, std::string, std::string, std::string, float, float> {
  public:
   explicit NodeInfoTrigger(Meshtastic *parent) { parent->add_on_nodeinfo_trigger(this); }
 };
 
-// POSITION_APP. (from, latitude deg, longitude deg, altitude m, time epoch, rssi, snr)
-class PositionTrigger : public Trigger<uint32_t, double, double, int32_t, uint32_t, float, float> {
+// POSITION_APP. (from, channel, latitude deg, longitude deg, altitude m, precision_bits, time epoch, rssi, snr)
+// precision_bits < 32 means the sender coarsened the location (anonymization); 0 = unset.
+class PositionTrigger
+    : public Trigger<uint32_t, std::string, double, double, int32_t, uint32_t, uint32_t, float, float> {
  public:
   explicit PositionTrigger(Meshtastic *parent) { parent->add_on_position_trigger(this); }
 };
 
-// TELEMETRY_APP device-metrics variant. (from, battery %, voltage, channel util %, air util tx %, uptime s)
-class TelemetryTrigger : public Trigger<uint32_t, uint32_t, float, float, float, uint32_t> {
+// TELEMETRY_APP device-metrics. (from, channel, battery %, voltage, channel util %, air util tx %, uptime s, rssi, snr)
+class TelemetryTrigger
+    : public Trigger<uint32_t, std::string, uint32_t, float, float, float, uint32_t, float, float> {
  public:
   explicit TelemetryTrigger(Meshtastic *parent) { parent->add_on_telemetry_trigger(this); }
 };

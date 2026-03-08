@@ -80,16 +80,16 @@ meshtastic:
           args: ['from', 'channel.c_str()', 'text.c_str()']
     on_nodeinfo:
       - logger.log:
-          format: "NodeInfo !%08x: %s (%s)"
-          args: ['from', 'long_name.c_str()', 'short_name.c_str()']
+          format: "NodeInfo !%08x (ch %s): %s (%s) role=%s"
+          args: ['from', 'channel.c_str()', 'long_name.c_str()', 'short_name.c_str()', 'role.c_str()']
     on_position:
       - logger.log:
-          format: "Position !%08x: %.6f, %.6f (%dm)"
-          args: ['from', 'latitude', 'longitude', 'altitude']
+          format: "Position !%08x (ch %s): %.6f, %.6f (%dm)"
+          args: ['from', 'channel.c_str()', 'latitude', 'longitude', 'altitude']
     on_telemetry:
       - logger.log:
-          format: "Telemetry !%08x: batt=%u%% %.2fV"
-          args: ['from', 'battery_level', 'voltage']
+          format: "Telemetry !%08x (ch %s): batt=%u pct, %.2fV"
+          args: ['from', 'channel.c_str()', 'battery_level', 'voltage']
 
 button:
   - platform: template

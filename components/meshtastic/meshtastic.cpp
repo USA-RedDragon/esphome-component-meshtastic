@@ -153,8 +153,8 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
         ESP_LOGD(TAG, "  node !%08x \"%s\" (%s) %s", h.from, user.long_name, user.short_name,
                  node == nullptr ? "(db off)" : (node_is_new ? "NEW" : "updated"));
         for (auto *t : this->on_nodeinfo_triggers_)
-          t->trigger(h.from, std::string(user.long_name), std::string(user.short_name), (uint32_t) user.hw_model,
-                     (uint32_t) user.role);
+          t->trigger(h.from, ch.name, std::string(user.long_name), std::string(user.short_name),
+                     hardware_model_name(user.hw_model), role_name(user.role), rssi, snr);
       }
     } else if (node != nullptr && node_is_new) {
       ESP_LOGD(TAG, "  node !%08x heard (awaiting NodeInfo) [%u known]", h.from, (unsigned) this->nodedb_.size());
@@ -174,9 +174,10 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
         }
         const double lat = pos.latitude_i * 1e-7;
         const double lon = pos.longitude_i * 1e-7;
-        ESP_LOGD(TAG, "  position !%08x %.6f, %.6f alt=%dm", h.from, lat, lon, (int) pos.altitude);
+        ESP_LOGD(TAG, "  position !%08x %.6f, %.6f alt=%dm prec=%ubits", h.from, lat, lon, (int) pos.altitude,
+                 pos.precision_bits);
         for (auto *t : this->on_position_triggers_)
-          t->trigger(h.from, lat, lon, pos.altitude, pos.time, rssi, snr);
+          t->trigger(h.from, ch.name, lat, lon, pos.altitude, pos.precision_bits, pos.time, rssi, snr);
       }
     }
 
@@ -193,7 +194,8 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
         ESP_LOGD(TAG, "  telemetry !%08x batt=%u%% %.2fV chUtil=%.1f%% airTx=%.1f%%", h.from, dm.battery_level,
                  dm.voltage, dm.channel_utilization, dm.air_util_tx);
         for (auto *t : this->on_telemetry_triggers_)
-          t->trigger(h.from, dm.battery_level, dm.voltage, dm.channel_utilization, dm.air_util_tx, dm.uptime_seconds);
+          t->trigger(h.from, ch.name, dm.battery_level, dm.voltage, dm.channel_utilization, dm.air_util_tx,
+                     dm.uptime_seconds, rssi, snr);
       }
     }
 
