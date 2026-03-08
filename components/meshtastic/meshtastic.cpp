@@ -283,6 +283,26 @@ void Meshtastic::send_data_(uint32_t portnum, const uint8_t *payload, size_t pay
   this->transmit_(packet);
 }
 
+void Meshtastic::send_text(const std::string &text, uint32_t dest, const std::string &channel, bool want_ack) {
+  size_t channel_idx = 0;  // primary (first channel) by default
+  if (!channel.empty()) {
+    bool found = false;
+    for (size_t i = 0; i < this->channels_.size(); i++) {
+      if (this->channels_[i].name == channel) {
+        channel_idx = i;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      ESP_LOGW(TAG, "send_text: unknown channel \"%s\"", channel.c_str());
+      return;
+    }
+  }
+  this->send_data_(meshtastic_PortNum_TEXT_MESSAGE_APP, (const uint8_t *) text.data(), text.size(), dest, channel_idx,
+                   want_ack);
+}
+
 void Meshtastic::broadcast_node_info_() {
   if (this->channels_.empty())
     return;

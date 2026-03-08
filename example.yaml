@@ -90,3 +90,11 @@ meshtastic:
       - logger.log:
           format: "Telemetry !%08x: batt=%u%% %.2fV"
           args: ['from', 'battery_level', 'voltage']
+
+button:
+  - platform: template
+    name: "Send Mesh Hello"
+    on_press:
+      - meshtastic.send_text:
+          text: "hello from esphome"
+          channel: LongFast

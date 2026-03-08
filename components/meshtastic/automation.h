@@ -40,5 +40,23 @@ class TelemetryTrigger : public Trigger<uint32_t, uint32_t, float, float, float,
   explicit TelemetryTrigger(Meshtastic *parent) { parent->add_on_telemetry_trigger(this); }
 };
 
+// meshtastic.send_text action. dest defaults to broadcast; channel is a channel name (empty = primary).
+template<typename... Ts> class SendTextAction : public Action<Ts...> {
+ public:
+  explicit SendTextAction(Meshtastic *parent) : parent_(parent) {}
+  TEMPLATABLE_VALUE(std::string, text)
+  TEMPLATABLE_VALUE(uint32_t, dest)
+  TEMPLATABLE_VALUE(std::string, channel)
+  TEMPLATABLE_VALUE(bool, want_ack)
+
+  void play(Ts... x) override {
+    this->parent_->send_text(this->text_.value(x...), this->dest_.value(x...), this->channel_.value(x...),
+                             this->want_ack_.value(x...));
+  }
+
+ protected:
+  Meshtastic *parent_;
+};
+
 }  // namespace meshtastic
 }  // namespace esphome

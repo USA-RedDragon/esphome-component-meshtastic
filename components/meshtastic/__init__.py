@@ -31,6 +31,10 @@ CONF_ON_TEXT = "on_text"
 CONF_ON_NODEINFO = "on_nodeinfo"
 CONF_ON_POSITION = "on_position"
 CONF_ON_TELEMETRY = "on_telemetry"
+CONF_TEXT = "text"
+CONF_CHANNEL = "channel"
+CONF_TO = "to"
+CONF_WANT_ACK = "want_ack"
 
 MIN_NODE_INFO_INTERVAL_MS = 60 * 60 * 1000
 
@@ -77,6 +81,30 @@ TelemetryTrigger = meshtastic_ns.class_(
     "TelemetryTrigger",
     automation.Trigger.template(cg.uint32, cg.uint32, cg.float_, cg.float_, cg.float_, cg.uint32),
 )
+SendTextAction = meshtastic_ns.class_("SendTextAction", automation.Action)
+
+
+@automation.register_action(
+    "meshtastic.send_text",
+    SendTextAction,
+    cv.Schema(
+        {
+            cv.GenerateID(): cv.use_id(Meshtastic),
+            cv.Required(CONF_TEXT): cv.templatable(cv.string),
+            cv.Optional(CONF_CHANNEL, default=""): cv.templatable(cv.string),
+            cv.Optional(CONF_TO, default=0xFFFFFFFF): cv.templatable(cv.hex_uint32_t),
+            cv.Optional(CONF_WANT_ACK, default=False): cv.templatable(cv.boolean),
+        }
+    ),
+    synchronous=True,
+)
+async def send_text_to_code(config, action_id, template_arg, args):
+    var = cg.new_Pvariable(action_id, template_arg, await cg.get_variable(config[CONF_ID]))
+    cg.add(var.set_text(await cg.templatable(config[CONF_TEXT], args, cg.std_string)))
+    cg.add(var.set_channel(await cg.templatable(config[CONF_CHANNEL], args, cg.std_string)))
+    cg.add(var.set_dest(await cg.templatable(config[CONF_TO], args, cg.uint32)))
+    cg.add(var.set_want_ack(await cg.templatable(config[CONF_WANT_ACK], args, cg.bool_)))
+    return var
 
 
 def _expand_psk_index(idx):

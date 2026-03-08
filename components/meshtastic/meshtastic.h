@@ -50,6 +50,7 @@ class Meshtastic : public Component
 #ifdef USE_SX127X
   void set_radio(sx127x::SX127x *radio);
 #endif
+
   using OnPacketTrigger = Trigger<uint32_t, uint32_t, uint32_t, std::vector<uint8_t>, float, float>;
   using OnTextTrigger = Trigger<uint32_t, uint32_t, uint8_t, std::string, float, float>;
   using OnNodeInfoTrigger = Trigger<uint32_t, std::string, std::string, uint32_t, uint32_t>;
@@ -60,6 +61,8 @@ class Meshtastic : public Component
   void add_on_nodeinfo_trigger(OnNodeInfoTrigger *t) { this->on_nodeinfo_triggers_.push_back(t); }
   void add_on_position_trigger(OnPositionTrigger *t) { this->on_position_triggers_.push_back(t); }
   void add_on_telemetry_trigger(OnTelemetryTrigger *t) { this->on_telemetry_triggers_.push_back(t); }
+
+  void send_text(const std::string &text, uint32_t dest, const std::string &channel, bool want_ack);
 
   void handle_rx(const std::vector<uint8_t> &packet, float rssi, float snr);
 
