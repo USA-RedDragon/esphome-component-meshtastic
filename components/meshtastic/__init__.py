@@ -29,6 +29,7 @@ CONF_NODE_DB_SIZE = "node_db_size"
 CONF_ON_PACKET = "on_packet"
 CONF_ON_TEXT = "on_text"
 CONF_ON_NODEINFO = "on_nodeinfo"
+CONF_ON_POSITION = "on_position"
 
 MIN_NODE_INFO_INTERVAL_MS = 60 * 60 * 1000
 
@@ -66,6 +67,10 @@ TextTrigger = meshtastic_ns.class_(
 NodeInfoTrigger = meshtastic_ns.class_(
     "NodeInfoTrigger",
     automation.Trigger.template(cg.uint32, cg.std_string, cg.std_string, cg.uint32, cg.uint32),
+)
+PositionTrigger = meshtastic_ns.class_(
+    "PositionTrigger",
+    automation.Trigger.template(cg.uint32, cg.double, cg.double, cg.int32, cg.uint32, cg.float_, cg.float_),
 )
 
 
@@ -144,6 +149,9 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_ON_NODEINFO): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(NodeInfoTrigger)}
         ),
+        cv.Optional(CONF_ON_POSITION): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(PositionTrigger)}
+        ),
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
 ).extend(cv.COMPONENT_SCHEMA)
@@ -211,6 +219,21 @@ async def to_code(config):
                 (cg.std_string, "short_name"),
                 (cg.uint32, "hw_model"),
                 (cg.uint32, "role"),
+            ],
+            conf,
+        )
+    for conf in config.get(CONF_ON_POSITION, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        await automation.build_automation(
+            trigger,
+            [
+                (cg.uint32, "from"),
+                (cg.double, "latitude"),
+                (cg.double, "longitude"),
+                (cg.int32, "altitude"),
+                (cg.uint32, "time"),
+                (cg.float_, "rssi"),
+                (cg.float_, "snr"),
             ],
             conf,
         )

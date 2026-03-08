@@ -82,3 +82,7 @@ meshtastic:
       - logger.log:
           format: "NodeInfo !%08x: %s (%s)"
           args: ['from', 'long_name.c_str()', 'short_name.c_str()']
+    on_position:
+      - logger.log:
+          format: "Position !%08x: %.6f, %.6f (%dm)"
+          args: ['from', 'latitude', 'longitude', 'altitude']

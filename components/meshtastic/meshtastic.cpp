@@ -155,6 +155,26 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
       ESP_LOGD(TAG, "  node !%08x heard (awaiting NodeInfo) [%u known]", h.from, (unsigned) this->nodedb_.size());
     }
 
+    if (data.portnum == meshtastic_PortNum_POSITION_APP && h.from != 0 && h.from != this->node_num_) {
+      meshtastic_Position pos = meshtastic_Position_init_zero;
+      pb_istream_t ps = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+      if (pb_decode(&ps, meshtastic_Position_fields, &pos)) {
+        if (node != nullptr) {
+          node->has_position = true;
+          node->position.latitude_i = pos.latitude_i;
+          node->position.longitude_i = pos.longitude_i;
+          node->position.altitude = pos.altitude;
+          node->position.time = pos.time;
+          node->position.location_source = pos.location_source;
+        }
+        const double lat = pos.latitude_i * 1e-7;
+        const double lon = pos.longitude_i * 1e-7;
+        ESP_LOGD(TAG, "  position !%08x %.6f, %.6f alt=%dm", h.from, lat, lon, (int) pos.altitude);
+        for (auto *t : this->on_position_triggers_)
+          t->trigger(h.from, lat, lon, pos.altitude, pos.time, rssi, snr);
+      }
+    }
+
     if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
       std::string text((const char *) data.payload.bytes, data.payload.size);
       ESP_LOGD(TAG, "  text: %s", text.c_str());

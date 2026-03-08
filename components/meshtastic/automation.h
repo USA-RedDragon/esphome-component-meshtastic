@@ -28,5 +28,11 @@ class NodeInfoTrigger : public Trigger<uint32_t, std::string, std::string, uint3
   explicit NodeInfoTrigger(Meshtastic *parent) { parent->add_on_nodeinfo_trigger(this); }
 };
 
+// POSITION_APP. (from, latitude deg, longitude deg, altitude m, time epoch, rssi, snr)
+class PositionTrigger : public Trigger<uint32_t, double, double, int32_t, uint32_t, float, float> {
+ public:
+  explicit PositionTrigger(Meshtastic *parent) { parent->add_on_position_trigger(this); }
+};
+
 }  // namespace meshtastic
 }  // namespace esphome

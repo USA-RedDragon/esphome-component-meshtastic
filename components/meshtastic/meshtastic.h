@@ -53,9 +53,11 @@ class Meshtastic : public Component
   using OnPacketTrigger = Trigger<uint32_t, uint32_t, uint32_t, std::vector<uint8_t>, float, float>;
   using OnTextTrigger = Trigger<uint32_t, uint32_t, uint8_t, std::string, float, float>;
   using OnNodeInfoTrigger = Trigger<uint32_t, std::string, std::string, uint32_t, uint32_t>;
+  using OnPositionTrigger = Trigger<uint32_t, double, double, int32_t, uint32_t, float, float>;
   void add_on_packet_trigger(OnPacketTrigger *t) { this->on_packet_triggers_.push_back(t); }
   void add_on_text_trigger(OnTextTrigger *t) { this->on_text_triggers_.push_back(t); }
   void add_on_nodeinfo_trigger(OnNodeInfoTrigger *t) { this->on_nodeinfo_triggers_.push_back(t); }
+  void add_on_position_trigger(OnPositionTrigger *t) { this->on_position_triggers_.push_back(t); }
 
   void handle_rx(const std::vector<uint8_t> &packet, float rssi, float snr);
 
@@ -83,6 +85,7 @@ class Meshtastic : public Component
   std::vector<OnPacketTrigger *> on_packet_triggers_;
   std::vector<OnTextTrigger *> on_text_triggers_;
   std::vector<OnNodeInfoTrigger *> on_nodeinfo_triggers_;
+  std::vector<OnPositionTrigger *> on_position_triggers_;
 
 #ifdef USE_SX126X
   sx126x::SX126x *sx126x_{nullptr};
