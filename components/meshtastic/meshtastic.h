@@ -2,6 +2,7 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
+#include "protocol.h"
 #include <string>
 #include <vector>
 

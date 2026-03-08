@@ -47,7 +47,14 @@ void Meshtastic::set_radio(sx127x::SX127x *radio) {
 
 #if defined(USE_SX126X) || defined(USE_SX127X)
 void Meshtastic::on_packet(const std::vector<uint8_t> &packet, float rssi, float snr) {
-  ESP_LOGD(TAG, "Received packet: %zu bytes, RSSI %.1f dBm, SNR %.1f dB", packet.size(), rssi, snr);
+  PacketHeader h;
+  if (!parse_header(packet, h)) {
+    ESP_LOGW(TAG, "Dropping runt packet: %zu bytes", packet.size());
+    return;
+  }
+  ESP_LOGD(TAG, "RX %zuB rssi=%.0f snr=%.1f from=!%08x to=!%08x id=0x%08x ch=0x%02x hop=%u/%u%s%s", packet.size(),
+           rssi, snr, h.from, h.to, h.id, h.channel, h.hop_limit, h.hop_start, h.want_ack ? " ack" : "",
+           h.via_mqtt ? " mqtt" : "");
 }
 #endif
 
