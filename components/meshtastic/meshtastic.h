@@ -54,6 +54,8 @@ class Meshtastic : public Component
 #if defined(USE_SX126X) || defined(USE_SX127X)
   void maybe_relay_(const std::vector<uint8_t> &packet, const PacketHeader &h, float snr);
   void transmit_(const std::vector<uint8_t> &packet);
+  void send_data_(uint32_t portnum, const uint8_t *payload, size_t payload_len, uint32_t dest, size_t channel_idx,
+                  bool want_ack);
 #endif
 
   std::string long_name_;

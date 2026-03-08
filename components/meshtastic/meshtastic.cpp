@@ -4,6 +4,8 @@
 
 #include "mesh.pb.h"
 #include <pb_decode.h>
+#include <pb_encode.h>
+#include <cstdio>
 
 namespace esphome {
 namespace meshtastic {
@@ -143,6 +145,49 @@ void Meshtastic::transmit_(const std::vector<uint8_t> &packet) {
     return;
   }
 #endif
+}
+
+void Meshtastic::send_data_(uint32_t portnum, const uint8_t *payload, size_t payload_len, uint32_t dest,
+                            size_t channel_idx, bool want_ack) {
+  if (channel_idx >= this->channels_.size())
+    return;
+  Channel &ch = this->channels_[channel_idx];
+
+  meshtastic_Data data = meshtastic_Data_init_zero;
+  data.portnum = (meshtastic_PortNum) portnum;
+  if (payload_len > sizeof(data.payload.bytes))
+    return;
+  data.payload.size = payload_len;
+  memcpy(data.payload.bytes, payload, payload_len);
+
+  uint8_t databuf[256];
+  pb_ostream_t os = pb_ostream_from_buffer(databuf, sizeof(databuf));
+  if (!pb_encode(&os, meshtastic_Data_fields, &data)) {
+    ESP_LOGW(TAG, "Data encode failed");
+    return;
+  }
+
+  uint32_t id = random_uint32();
+  if (id == 0)
+    id = 1;
+
+  std::vector<uint8_t> packet(MESHTASTIC_HEADER_LEN + os.bytes_written);
+  if (!ch.crypt(this->node_num_, id, databuf, os.bytes_written, packet.data() + MESHTASTIC_HEADER_LEN))
+    return;
+
+  PacketHeader h{};
+  h.to = dest;
+  h.from = this->node_num_;
+  h.id = id;
+  h.hop_limit = this->hop_limit_;
+  h.want_ack = want_ack;
+  h.hop_start = this->hop_limit_;
+  h.channel = ch.hash;
+  serialize_header(h, packet.data());
+
+  this->dedup_.is_duplicate(this->node_num_, id, millis());  // remember our own packet
+  ESP_LOGD(TAG, "TX portnum=%u to=!%08x id=0x%08x %uB", portnum, dest, id, (unsigned) packet.size());
+  this->transmit_(packet);
 }
 #endif
 
