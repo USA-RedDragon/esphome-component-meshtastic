@@ -2,6 +2,7 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
+#include <string>
 #include <vector>
 
 #if __has_include("esphome/components/sx126x/sx126x.h")
@@ -25,7 +26,12 @@ class Meshtastic : public Component
 #endif
 {
  public:
+  void setup() override;
   void dump_config() override;
+
+  void set_long_name(const std::string &name) { this->long_name_ = name; }
+  void set_short_name(const std::string &name) { this->short_name_ = name; }
+  void set_node_num(uint32_t num) { this->node_num_ = num; }
 
 #ifdef USE_SX126X
   void set_radio(sx126x::SX126x *radio);
@@ -39,6 +45,10 @@ class Meshtastic : public Component
 #endif
 
  protected:
+  std::string long_name_;
+  std::string short_name_;
+  uint32_t node_num_{0};
+
 #ifdef USE_SX126X
   sx126x::SX126x *sx126x_{nullptr};
 #endif

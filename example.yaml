@@ -57,3 +57,6 @@ sx126x:
 
 meshtastic:
   - radio: id_sx126x
+    long_name: "ESP32S3"
+    short_name: "ESPS"
+    node_num: 0xDEAD

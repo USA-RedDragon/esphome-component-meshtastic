@@ -1,12 +1,27 @@
 #include "meshtastic.h"
+#include "esphome/core/helpers.h"
 
 namespace esphome {
 namespace meshtastic {
 
 static const char *const TAG = "meshtastic";
 
+void Meshtastic::setup() {
+  if (this->node_num_ == 0) {
+    uint8_t mac[6];
+    get_mac_address_raw(mac);
+    this->node_num_ = ((uint32_t) mac[2] << 24) | ((uint32_t) mac[3] << 16) | ((uint32_t) mac[4] << 8) | mac[5];
+  }
+  if (this->short_name_.empty())
+    this->short_name_ = str_snprintf("%04x", 4, this->node_num_ & 0xFFFF);
+  if (this->long_name_.empty())
+    this->long_name_ = "Meshtastic " + this->short_name_;
+}
+
 void Meshtastic::dump_config() {
   ESP_LOGCONFIG(TAG, "Meshtastic:");
+  ESP_LOGCONFIG(TAG, "  Node: !%08x \"%s\" (%s)", this->node_num_, this->long_name_.c_str(),
+                this->short_name_.c_str());
 #ifdef USE_SX126X
   if (this->sx126x_ != nullptr)
     ESP_LOGCONFIG(TAG, "  Radio: SX126x");
