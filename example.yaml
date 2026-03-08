@@ -62,6 +62,7 @@ meshtastic:
     node_num: 0xDEAD
     role: CLIENT
     hop_limit: 3
+    hw_model: DIY_V1
     channels:
       - name: LongFast
         psk: AQ==
