@@ -102,7 +102,8 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
   const size_t cipher_len = packet.size() - MESHTASTIC_HEADER_LEN;
 
   // Try each channel whose hash matches; decode the first that yields a valid Data.
-  for (auto &ch : this->channels_) {
+  for (size_t ci = 0; ci < this->channels_.size(); ci++) {
+    Channel &ch = this->channels_[ci];
     if (ch.hash != h.channel)
       continue;
     std::vector<uint8_t> plain(cipher_len);
@@ -114,6 +115,12 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
       continue;
     ESP_LOGD(TAG, "  decoded on \"%s\": portnum=%d payload=%uB", ch.name.c_str(), (int) data.portnum,
              (unsigned) data.payload.size);
+
+    if (!this->on_packet_triggers_.empty()) {
+      std::vector<uint8_t> payload(data.payload.bytes, data.payload.bytes + data.payload.size);
+      for (auto *t : this->on_packet_triggers_)
+        t->trigger(h.from, h.to, (uint32_t) data.portnum, payload, rssi, snr);
+    }
 
     if (h.from != 0 && h.from != this->node_num_) {
       bool is_new = false;
@@ -135,14 +142,21 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
           node->user.is_licensed = user.is_licensed;
           ESP_LOGD(TAG, "  node !%08x \"%s\" (%s) %s [%u known]", h.from, node->user.long_name, node->user.short_name,
                    is_new ? "NEW" : "updated", (unsigned) this->nodedb_.size());
+          for (auto *t : this->on_nodeinfo_triggers_)
+            t->trigger(h.from, std::string(node->user.long_name), std::string(node->user.short_name),
+                       (uint32_t) node->user.hw_model, (uint32_t) node->user.role);
         }
       } else if (is_new) {
         ESP_LOGD(TAG, "  node !%08x heard (awaiting NodeInfo) [%u known]", h.from, (unsigned) this->nodedb_.size());
       }
     }
 
-    if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP)
-      ESP_LOGD(TAG, "  text: %.*s", (int) data.payload.size, (const char *) data.payload.bytes);
+    if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
+      std::string text((const char *) data.payload.bytes, data.payload.size);
+      ESP_LOGD(TAG, "  text: %s", text.c_str());
+      for (auto *t : this->on_text_triggers_)
+        t->trigger(h.from, h.to, (uint8_t) ci, text, rssi, snr);
+    }
     return;
   }
   ESP_LOGD(TAG, "  no channel matched hash 0x%02x (or decode failed)", h.channel);

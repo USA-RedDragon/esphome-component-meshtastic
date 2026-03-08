@@ -1,5 +1,6 @@
 #pragma once
 
+#include "esphome/core/automation.h"
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
 #include "channel.h"
@@ -49,6 +50,12 @@ class Meshtastic : public Component
 #ifdef USE_SX127X
   void set_radio(sx127x::SX127x *radio);
 #endif
+  using OnPacketTrigger = Trigger<uint32_t, uint32_t, uint32_t, std::vector<uint8_t>, float, float>;
+  using OnTextTrigger = Trigger<uint32_t, uint32_t, uint8_t, std::string, float, float>;
+  using OnNodeInfoTrigger = Trigger<uint32_t, std::string, std::string, uint32_t, uint32_t>;
+  void add_on_packet_trigger(OnPacketTrigger *t) { this->on_packet_triggers_.push_back(t); }
+  void add_on_text_trigger(OnTextTrigger *t) { this->on_text_triggers_.push_back(t); }
+  void add_on_nodeinfo_trigger(OnNodeInfoTrigger *t) { this->on_nodeinfo_triggers_.push_back(t); }
 
   void handle_rx(const std::vector<uint8_t> &packet, float rssi, float snr);
 
@@ -73,6 +80,9 @@ class Meshtastic : public Component
   std::vector<Channel> channels_;
   PacketDedup dedup_;
   NodeDb nodedb_;
+  std::vector<OnPacketTrigger *> on_packet_triggers_;
+  std::vector<OnTextTrigger *> on_text_triggers_;
+  std::vector<OnNodeInfoTrigger *> on_nodeinfo_triggers_;
 
 #ifdef USE_SX126X
   sx126x::SX126x *sx126x_{nullptr};

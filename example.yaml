@@ -70,3 +70,15 @@ meshtastic:
         psk: AQ==
         uplink: false
         downlink: false
+    on_packet:
+      - logger.log:
+          format: "Packet !%08x->!%08x portnum=%u len=%u rssi=%.0f snr=%.1f"
+          args: ['from', 'to', 'portnum', '(unsigned) payload.size()', 'rssi', 'snr']
+    on_text:
+      - logger.log:
+          format: "Mesh text from !%08x (ch %u): %s"
+          args: ['from', 'channel', 'text.c_str()']
+    on_nodeinfo:
+      - logger.log:
+          format: "NodeInfo !%08x: %s (%s)"
+          args: ['from', 'long_name.c_str()', 'short_name.c_str()']
