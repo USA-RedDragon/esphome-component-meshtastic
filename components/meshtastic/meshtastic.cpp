@@ -196,7 +196,7 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
       std::string text((const char *) data.payload.bytes, data.payload.size);
       ESP_LOGD(TAG, "  text: %s", text.c_str());
       for (auto *t : this->on_text_triggers_)
-        t->trigger(h.from, h.to, (uint8_t) ci, text, rssi, snr);
+        t->trigger(h.from, h.to, ch.name, text, rssi, snr);
     }
     return;
   }

@@ -67,7 +67,7 @@ PacketTrigger = meshtastic_ns.class_(
 )
 TextTrigger = meshtastic_ns.class_(
     "TextTrigger",
-    automation.Trigger.template(cg.uint32, cg.uint32, cg.uint8, cg.std_string, cg.float_, cg.float_),
+    automation.Trigger.template(cg.uint32, cg.uint32, cg.std_string, cg.std_string, cg.float_, cg.float_),
 )
 NodeInfoTrigger = meshtastic_ns.class_(
     "NodeInfoTrigger",
@@ -238,7 +238,7 @@ async def to_code(config):
             [
                 (cg.uint32, "from"),
                 (cg.uint32, "to"),
-                (cg.uint8, "channel"),
+                (cg.std_string, "channel"),
                 (cg.std_string, "text"),
                 (cg.float_, "rssi"),
                 (cg.float_, "snr"),

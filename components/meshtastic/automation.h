@@ -16,8 +16,8 @@ class PacketTrigger : public Trigger<uint32_t, uint32_t, uint32_t, std::vector<u
   explicit PacketTrigger(Meshtastic *parent) { parent->add_on_packet_trigger(this); }
 };
 
-// TEXT_MESSAGE_APP. (from, to, channel index, text, rssi, snr)
-class TextTrigger : public Trigger<uint32_t, uint32_t, uint8_t, std::string, float, float> {
+// TEXT_MESSAGE_APP. (from, to, channel name, text, rssi, snr)
+class TextTrigger : public Trigger<uint32_t, uint32_t, std::string, std::string, float, float> {
  public:
   explicit TextTrigger(Meshtastic *parent) { parent->add_on_text_trigger(this); }
 };

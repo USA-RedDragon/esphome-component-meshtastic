@@ -76,8 +76,8 @@ meshtastic:
           args: ['from', 'to', 'portnum', '(unsigned) payload.size()', 'rssi', 'snr']
     on_text:
       - logger.log:
-          format: "Mesh text from !%08x (ch %u): %s"
-          args: ['from', 'channel', 'text.c_str()']
+          format: "Mesh text from !%08x (ch %s): %s"
+          args: ['from', 'channel.c_str()', 'text.c_str()']
     on_nodeinfo:
       - logger.log:
           format: "NodeInfo !%08x: %s (%s)"

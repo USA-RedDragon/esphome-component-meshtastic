@@ -52,7 +52,7 @@ class Meshtastic : public Component
 #endif
 
   using OnPacketTrigger = Trigger<uint32_t, uint32_t, uint32_t, std::vector<uint8_t>, float, float>;
-  using OnTextTrigger = Trigger<uint32_t, uint32_t, uint8_t, std::string, float, float>;
+  using OnTextTrigger = Trigger<uint32_t, uint32_t, std::string, std::string, float, float>;
   using OnNodeInfoTrigger = Trigger<uint32_t, std::string, std::string, uint32_t, uint32_t>;
   using OnPositionTrigger = Trigger<uint32_t, double, double, int32_t, uint32_t, float, float>;
   using OnTelemetryTrigger = Trigger<uint32_t, uint32_t, float, float, float, uint32_t>;
