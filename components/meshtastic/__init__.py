@@ -134,7 +134,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_HOP_LIMIT, default=3): cv.int_range(min=0, max=7),
         cv.Optional(CONF_NODE_INFO_INTERVAL, default="3h"): validate_node_info_interval,
         cv.Optional(CONF_HW_MODEL, default="DIY_V1"): cv.enum(_enums.HARDWARE_MODELS, upper=True),
-        cv.Optional(CONF_NODE_DB_SIZE): cv.int_range(min=1, max=500),
+        cv.Optional(CONF_NODE_DB_SIZE): cv.int_range(min=0, max=500),  # 0 disables the node DB
         cv.Optional(CONF_ON_PACKET): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(PacketTrigger)}
         ),
@@ -167,7 +167,8 @@ async def to_code(config):
     cg.add(var.set_hop_limit(config[CONF_HOP_LIMIT]))
     cg.add(var.set_node_info_interval(config[CONF_NODE_INFO_INTERVAL]))
     cg.add(var.set_hw_model(config[CONF_HW_MODEL]))
-    cg.add(var.set_node_db_size(config.get(CONF_NODE_DB_SIZE) or default_node_db_size()))
+    node_db_size = config[CONF_NODE_DB_SIZE] if CONF_NODE_DB_SIZE in config else default_node_db_size()
+    cg.add(var.set_node_db_size(node_db_size))
 
     for ch in config.get(CONF_CHANNELS, []):
         cg.add(var.add_channel(ch[CONF_NAME], ch[CONF_PSK], ch[CONF_UPLINK], ch[CONF_DOWNLINK]))

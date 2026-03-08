@@ -122,33 +122,37 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
         t->trigger(h.from, h.to, (uint32_t) data.portnum, payload, rssi, snr);
     }
 
-    if (h.from != 0 && h.from != this->node_num_) {
-      bool is_new = false;
-      meshtastic_NodeInfoLite *node = this->nodedb_.get_or_create(h.from, &is_new);
+    bool node_is_new = false;
+    meshtastic_NodeInfoLite *node = nullptr;
+    if (h.from != 0 && h.from != this->node_num_ && this->nodedb_.enabled()) {
+      node = this->nodedb_.get_or_create(h.from, &node_is_new);
       node->num = h.from;
       node->snr = snr;
       node->last_heard = millis();
       node->has_hops_away = true;
       node->hops_away = (h.hop_start >= h.hop_limit) ? (h.hop_start - h.hop_limit) : 0;
-      if (data.portnum == meshtastic_PortNum_NODEINFO_APP) {
-        meshtastic_User user = meshtastic_User_init_zero;
-        pb_istream_t us = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
-        if (pb_decode(&us, meshtastic_User_fields, &user)) {
+    }
+
+    if (data.portnum == meshtastic_PortNum_NODEINFO_APP && h.from != 0 && h.from != this->node_num_) {
+      meshtastic_User user = meshtastic_User_init_zero;
+      pb_istream_t us = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+      if (pb_decode(&us, meshtastic_User_fields, &user)) {
+        if (node != nullptr) {
           node->has_user = true;
           memcpy(node->user.long_name, user.long_name, sizeof(node->user.long_name));
           memcpy(node->user.short_name, user.short_name, sizeof(node->user.short_name));
           node->user.hw_model = user.hw_model;
           node->user.role = user.role;
           node->user.is_licensed = user.is_licensed;
-          ESP_LOGD(TAG, "  node !%08x \"%s\" (%s) %s [%u known]", h.from, node->user.long_name, node->user.short_name,
-                   is_new ? "NEW" : "updated", (unsigned) this->nodedb_.size());
-          for (auto *t : this->on_nodeinfo_triggers_)
-            t->trigger(h.from, std::string(node->user.long_name), std::string(node->user.short_name),
-                       (uint32_t) node->user.hw_model, (uint32_t) node->user.role);
         }
-      } else if (is_new) {
-        ESP_LOGD(TAG, "  node !%08x heard (awaiting NodeInfo) [%u known]", h.from, (unsigned) this->nodedb_.size());
+        ESP_LOGD(TAG, "  node !%08x \"%s\" (%s) %s", h.from, user.long_name, user.short_name,
+                 node == nullptr ? "(db off)" : (node_is_new ? "NEW" : "updated"));
+        for (auto *t : this->on_nodeinfo_triggers_)
+          t->trigger(h.from, std::string(user.long_name), std::string(user.short_name), (uint32_t) user.hw_model,
+                     (uint32_t) user.role);
       }
+    } else if (node != nullptr && node_is_new) {
+      ESP_LOGD(TAG, "  node !%08x heard (awaiting NodeInfo) [%u known]", h.from, (unsigned) this->nodedb_.size());
     }
 
     if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {

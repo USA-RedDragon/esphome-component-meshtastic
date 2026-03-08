@@ -18,6 +18,7 @@ using NodeVector = std::vector<meshtastic_NodeInfoLite, RAMAllocator<meshtastic_
 class NodeDb {
  public:
   void set_max_nodes(size_t max_nodes) { this->max_nodes_ = max_nodes; }
+  bool enabled() const { return this->max_nodes_ > 0; }
   meshtastic_NodeInfoLite *get_or_create(uint32_t num, bool *is_new);
   meshtastic_NodeInfoLite *find(uint32_t num);
   size_t size() const { return this->nodes_.size(); }
