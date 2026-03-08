@@ -1,4 +1,5 @@
 #include "meshtastic.h"
+#include "esphome/core/hal.h"
 #include "esphome/core/helpers.h"
 
 #include "mesh.pb.h"
@@ -76,6 +77,11 @@ void Meshtastic::on_packet(const std::vector<uint8_t> &packet, float rssi, float
   ESP_LOGD(TAG, "RX %zuB rssi=%.0f snr=%.1f from=!%08x to=!%08x id=0x%08x ch=0x%02x hop=%u/%u%s%s", packet.size(),
            rssi, snr, h.from, h.to, h.id, h.channel, h.hop_limit, h.hop_start, h.want_ack ? " ack" : "",
            h.via_mqtt ? " mqtt" : "");
+
+  if (this->dedup_.is_duplicate(h.from, h.id, millis())) {
+    ESP_LOGV(TAG, "  duplicate, ignoring");
+    return;
+  }
 
   this->maybe_relay_(packet, h, snr);
 

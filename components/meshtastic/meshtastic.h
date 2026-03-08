@@ -62,6 +62,7 @@ class Meshtastic : public Component
   uint32_t role_{0};  // meshtastic_Config_DeviceConfig_Role_CLIENT
   uint8_t hop_limit_{3};
   std::vector<Channel> channels_;
+  PacketDedup dedup_;
 
 #ifdef USE_SX126X
   sx126x::SX126x *sx126x_{nullptr};
