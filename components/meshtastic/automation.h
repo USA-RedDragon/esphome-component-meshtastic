@@ -53,7 +53,7 @@ template<typename... Ts> class SendTextAction : public Action<Ts...> {
   TEMPLATABLE_VALUE(std::string, channel)
   TEMPLATABLE_VALUE(bool, want_ack)
 
-  void play(Ts... x) override {
+  void play(const Ts &...x) override {
     this->parent_->send_text(this->text_.value(x...), this->dest_.value(x...), this->channel_.value(x...),
                              this->want_ack_.value(x...));
   }
@@ -73,7 +73,7 @@ template<typename... Ts> class SendPositionAction : public Action<Ts...> {
   TEMPLATABLE_VALUE(std::string, channel)
   TEMPLATABLE_VALUE(bool, want_ack)
 
-  void play(Ts... x) override {
+  void play(const Ts &...x) override {
     this->parent_->send_position(this->latitude_.value(x...), this->longitude_.value(x...),
                                  this->altitude_.value(x...), this->precision_bits_.value(x...),
                                  this->channel_.value(x...), this->want_ack_.value(x...));
@@ -95,7 +95,7 @@ template<typename... Ts> class SendTelemetryAction : public Action<Ts...> {
   TEMPLATABLE_VALUE(std::string, channel)
   TEMPLATABLE_VALUE(bool, want_ack)
 
-  void play(Ts... x) override {
+  void play(const Ts &...x) override {
     meshtastic_DeviceMetrics m = meshtastic_DeviceMetrics_init_zero;
     if (this->battery_level_.has_value()) {
       m.has_battery_level = true;
@@ -154,7 +154,7 @@ template<typename... Ts> class SendEnvironmentMetricsAction : public Action<Ts..
   TEMPLATABLE_VALUE(std::string, channel)
   TEMPLATABLE_VALUE(bool, want_ack)
 
-  void play(Ts... x) override {
+  void play(const Ts &...x) override {
     meshtastic_EnvironmentMetrics m = meshtastic_EnvironmentMetrics_init_zero;
 #define MESH_ENV_FLOAT(field) \
   if (this->field##_.has_value()) { \
@@ -211,7 +211,7 @@ template<typename... Ts> class SendEnvironmentMetricsAction : public Action<Ts..
 template<typename... Ts> class SendNodeInfoAction : public Action<Ts...> {
  public:
   explicit SendNodeInfoAction(Meshtastic *parent) : parent_(parent) {}
-  void play(Ts... x) override { this->parent_->send_node_info(); }
+  void play(const Ts &...x) override { this->parent_->send_node_info(); }
 
  protected:
   Meshtastic *parent_;
