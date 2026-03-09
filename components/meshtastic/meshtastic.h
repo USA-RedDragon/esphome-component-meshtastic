@@ -84,11 +84,16 @@ class Meshtastic : public Component
   void maybe_relay_(const std::vector<uint8_t> &packet, const PacketHeader &h, float snr);
   void transmit_(const std::vector<uint8_t> &packet);
   void send_data_(uint32_t portnum, const uint8_t *payload, size_t payload_len, uint32_t dest, size_t channel_idx,
-                  bool want_ack, uint32_t request_id = 0);
+                  bool want_ack, uint32_t request_id = 0, bool want_response = false);
   void send_ack_(uint32_t to, uint32_t request_id, size_t channel_idx);
   int find_channel_index_(const std::string &name);
   void send_telemetry_(const meshtastic_Telemetry &tel, size_t channel_idx, bool want_ack);
   void init_keypair_();
+  void request_node_info_(uint32_t dest);
+  void queue_pending_dm_(uint32_t dest, const std::string &text, bool want_ack);
+  void queue_pending_rx_(uint32_t from, const std::vector<uint8_t> &packet, float rssi, float snr);
+  void flush_pending_dms_(uint32_t learned_node);
+  void expire_pending_dms_();
 
   std::string long_name_;
   std::string short_name_;
@@ -102,6 +107,19 @@ class Meshtastic : public Component
   bool has_keypair_{false};
   bool private_key_configured_{false};
   ESPPreferenceObject key_pref_;
+  // One queue for both directions: a TX DM awaiting the destination's public key, or an RX DM we could
+  // not decrypt yet awaiting the sender's public key
+  struct PendingDm {
+    uint32_t peer;
+    uint32_t queued_at;
+    bool is_rx;
+    std::string text;             // TX
+    bool want_ack;                // TX
+    std::vector<uint8_t> packet;  // RX: full raw packet, re-decoded on retry
+    float rssi;                   // RX
+    float snr;                    // RX
+  };
+  std::vector<PendingDm> pending_dms_;
   std::vector<Channel> channels_;
   PacketDedup dedup_;
   NodeDb nodedb_;

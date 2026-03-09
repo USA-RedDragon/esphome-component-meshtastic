@@ -70,6 +70,8 @@ void Meshtastic::setup() {
     this->defer([this]() { this->send_node_info(); });
     this->set_interval(this->node_info_interval_, [this]() { this->send_node_info(); });
   }
+
+  this->set_interval(15000, [this]() { this->expire_pending_dms_(); });
 }
 
 void Meshtastic::dump_config() {
@@ -282,14 +284,15 @@ void Meshtastic::transmit_(const std::vector<uint8_t> &packet) {
 }
 
 void Meshtastic::send_data_(uint32_t portnum, const uint8_t *payload, size_t payload_len, uint32_t dest,
-                            size_t channel_idx, bool want_ack, uint32_t request_id) {
+                            size_t channel_idx, bool want_ack, uint32_t request_id, bool want_response) {
   if (channel_idx >= this->channels_.size())
     return;
   Channel &ch = this->channels_[channel_idx];
 
   meshtastic_Data data = meshtastic_Data_init_zero;
   data.portnum = (meshtastic_PortNum) portnum;
-  data.request_id = request_id;  // non-zero on a ROUTING ack: the id of the packet being acked
+  data.request_id = request_id;
+  data.want_response = want_response;
   if (payload_len > sizeof(data.payload.bytes))
     return;
   data.payload.size = payload_len;
@@ -351,12 +354,119 @@ int Meshtastic::find_channel_index_(const std::string &name) {
 }
 
 void Meshtastic::send_text(const std::string &text, uint32_t dest, const std::string &channel, bool want_ack) {
+  if (dest != MESHTASTIC_BROADCAST_ADDR && dest != 0 && this->has_keypair_) {
+    meshtastic_NodeInfoLite *peer = this->nodedb_.find(dest);
+    if (peer != nullptr && peer->has_user && peer->user.public_key.size == 32) {
+    } else {
+      this->queue_pending_dm_(dest, text, want_ack);
+      this->request_node_info_(dest);
+    }
+    return;
+  }
   const int idx = this->find_channel_index_(channel);
   if (idx < 0) {
     ESP_LOGW(TAG, "send_text: unknown channel \"%s\"", channel.c_str());
     return;
   }
   this->send_data_(meshtastic_PortNum_TEXT_MESSAGE_APP, (const uint8_t *) text.data(), text.size(), dest, idx, want_ack);
+}
+void Meshtastic::request_node_info_(uint32_t dest) {
+  meshtastic_User user = meshtastic_User_init_zero;
+  snprintf(user.id, sizeof(user.id), "!%08x", this->node_num_);
+  strncpy(user.long_name, this->long_name_.c_str(), sizeof(user.long_name) - 1);
+  strncpy(user.short_name, this->short_name_.c_str(), sizeof(user.short_name) - 1);
+  user.hw_model = (meshtastic_HardwareModel) this->hw_model_;
+  user.role = (meshtastic_Config_DeviceConfig_Role) this->role_;
+  if (this->has_keypair_) {
+    user.public_key.size = sizeof(this->public_key_);
+    memcpy(user.public_key.bytes, this->public_key_, sizeof(this->public_key_));
+  }
+  uint8_t buf[meshtastic_User_size];
+  pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
+  if (!pb_encode(&os, meshtastic_User_fields, &user))
+    return;
+  ESP_LOGD(TAG, "Requesting NodeInfo from !%08x", dest);
+  this->send_data_(meshtastic_PortNum_NODEINFO_APP, buf, os.bytes_written, dest, 0, false, 0, true);
+}
+
+static const size_t MAX_PENDING_DMS = 8;
+
+void Meshtastic::queue_pending_dm_(uint32_t dest, const std::string &text, bool want_ack) {
+  if (this->pending_dms_.size() >= MAX_PENDING_DMS)
+    this->pending_dms_.erase(this->pending_dms_.begin());
+  PendingDm dm{};
+  dm.peer = dest;
+  dm.queued_at = millis();
+  dm.is_rx = false;
+  dm.text = text;
+  dm.want_ack = want_ack;
+  this->pending_dms_.push_back(std::move(dm));
+  ESP_LOGD(TAG, "Queued DM for !%08x (awaiting its public key)", dest);
+}
+
+void Meshtastic::queue_pending_rx_(uint32_t from, const std::vector<uint8_t> &packet, float rssi, float snr) {
+  if (this->pending_dms_.size() >= MAX_PENDING_DMS)
+    this->pending_dms_.erase(this->pending_dms_.begin());  // drop oldest
+  PendingDm dm{};
+  dm.peer = from;
+  dm.queued_at = millis();
+  dm.is_rx = true;
+  dm.packet = packet;
+  dm.rssi = rssi;
+  dm.snr = snr;
+  this->pending_dms_.push_back(std::move(dm));
+  ESP_LOGD(TAG, "Buffered an undecryptable DM from !%08x (awaiting its public key)", from);
+}
+
+void Meshtastic::flush_pending_dms_(uint32_t learned_node) {
+  // Copy the key out: dispatch_decoded_ may grow the node DB and invalidate the NodeInfoLite pointer.
+  uint8_t peer_key[32];
+  bool have_key = false;
+  if (meshtastic_NodeInfoLite *peer = this->nodedb_.find(learned_node)) {
+    if (peer->user.public_key.size == 32) {
+      memcpy(peer_key, peer->user.public_key.bytes, sizeof(peer_key));
+      have_key = true;
+    }
+  }
+  for (size_t i = 0; i < this->pending_dms_.size();) {
+    if (this->pending_dms_[i].peer != learned_node) {
+      i++;
+      continue;
+    }
+    const PendingDm dm = std::move(this->pending_dms_[i]);
+    this->pending_dms_.erase(this->pending_dms_.begin() + i);
+    if (!dm.is_rx) {
+      ESP_LOGD(TAG, "Sending queued DM to !%08x", dm.peer);
+      this->send_dm_(dm.peer, meshtastic_PortNum_TEXT_MESSAGE_APP, (const uint8_t *) dm.text.data(), dm.text.size(),
+                     dm.want_ack, 0);
+    } else if (have_key) {
+      PacketHeader h;
+      if (parse_header(dm.packet, h)) {
+        const uint8_t *cipher = dm.packet.data() + MESHTASTIC_HEADER_LEN;
+        const size_t cipher_len = dm.packet.size() - MESHTASTIC_HEADER_LEN;
+        meshtastic_Data data = meshtastic_Data_init_zero;
+        if (this->pkc_decode_(h, cipher, cipher_len, peer_key, &data)) {
+          ESP_LOGD(TAG, "  decoded buffered DM from !%08x: portnum=%d", h.from, (int) data.portnum);
+          this->dispatch_decoded_(data, h, "", dm.rssi, dm.snr);
+        }
+      }
+    }
+  }
+}
+
+void Meshtastic::expire_pending_dms_() {
+  static const uint32_t TIMEOUT_MS = 120000;  // 2 minutes
+  const uint32_t now = millis();
+  for (size_t i = 0; i < this->pending_dms_.size();) {
+    if (now - this->pending_dms_[i].queued_at > TIMEOUT_MS) {
+      ESP_LOGW(TAG, "Dropping queued DM %s !%08x (no public key after %us)",
+               this->pending_dms_[i].is_rx ? "from" : "to", this->pending_dms_[i].peer,
+               (unsigned) (TIMEOUT_MS / 1000));
+      this->pending_dms_.erase(this->pending_dms_.begin() + i);
+    } else {
+      i++;
+    }
+  }
 }
 
 void Meshtastic::send_position(double latitude, double longitude, int32_t altitude, uint32_t precision_bits,
