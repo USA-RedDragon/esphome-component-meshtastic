@@ -95,6 +95,7 @@ class Meshtastic : public Component
                    meshtastic_Data *out);
   void send_dm_(uint32_t dest, uint32_t portnum, const uint8_t *payload, size_t payload_len, bool want_ack,
                 uint32_t request_id);
+  void send_our_node_info_(uint32_t dest, size_t channel_idx, bool want_response);
   void request_node_info_(uint32_t dest);
   void queue_pending_dm_(uint32_t dest, const std::string &text, bool want_ack);
   void queue_pending_rx_(uint32_t from, const std::vector<uint8_t> &packet, float rssi, float snr);

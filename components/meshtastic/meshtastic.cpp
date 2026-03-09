@@ -162,6 +162,11 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
                    hardware_model_name(user.hw_model), role_name(user.role), rssi, snr);
       if (user.public_key.size == 32)
         this->flush_pending_dms_(h.from);
+      if (data.want_response && h.to == this->node_num_) {
+        const int ridx = this->find_channel_index_(channel_name);
+        ESP_LOGD(TAG, "  NodeInfo requested by !%08x; replying", h.from);
+        this->send_our_node_info_(h.from, ridx < 0 ? 0 : ridx, false);
+      }
     }
   } else if (node != nullptr && node_is_new) {
     ESP_LOGD(TAG, "  node !%08x heard (awaiting NodeInfo) [%u known]", h.from, (unsigned) this->nodedb_.size());
@@ -495,7 +500,7 @@ void Meshtastic::send_dm_(uint32_t dest, uint32_t portnum, const uint8_t *payloa
   this->transmit_(packet);
 }
 
-void Meshtastic::request_node_info_(uint32_t dest) {
+void Meshtastic::send_our_node_info_(uint32_t dest, size_t channel_idx, bool want_response) {
   meshtastic_User user = meshtastic_User_init_zero;
   snprintf(user.id, sizeof(user.id), "!%08x", this->node_num_);
   strncpy(user.long_name, this->long_name_.c_str(), sizeof(user.long_name) - 1);
@@ -508,10 +513,16 @@ void Meshtastic::request_node_info_(uint32_t dest) {
   }
   uint8_t buf[meshtastic_User_size];
   pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
-  if (!pb_encode(&os, meshtastic_User_fields, &user))
+  if (!pb_encode(&os, meshtastic_User_fields, &user)) {
+    ESP_LOGW(TAG, "User encode failed");
     return;
+  }
+  this->send_data_(meshtastic_PortNum_NODEINFO_APP, buf, os.bytes_written, dest, channel_idx, false, 0, want_response);
+}
+
+void Meshtastic::request_node_info_(uint32_t dest) {
   ESP_LOGD(TAG, "Requesting NodeInfo from !%08x", dest);
-  this->send_data_(meshtastic_PortNum_NODEINFO_APP, buf, os.bytes_written, dest, 0, false, 0, true);
+  this->send_our_node_info_(dest, 0, true);
 }
 
 static const size_t MAX_PENDING_DMS = 8;
@@ -669,25 +680,8 @@ void Meshtastic::send_environment_metrics(const meshtastic_EnvironmentMetrics &m
 void Meshtastic::send_node_info() {
   if (this->channels_.empty())
     return;
-  meshtastic_User user = meshtastic_User_init_zero;
-  snprintf(user.id, sizeof(user.id), "!%08x", this->node_num_);
-  strncpy(user.long_name, this->long_name_.c_str(), sizeof(user.long_name) - 1);
-  strncpy(user.short_name, this->short_name_.c_str(), sizeof(user.short_name) - 1);
-  user.hw_model = (meshtastic_HardwareModel) this->hw_model_;
-  user.role = (meshtastic_Config_DeviceConfig_Role) this->role_;
-  if (this->has_keypair_) {
-    user.public_key.size = sizeof(this->public_key_);
-    memcpy(user.public_key.bytes, this->public_key_, sizeof(this->public_key_));
-  }
-
-  uint8_t buf[meshtastic_User_size];
-  pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
-  if (!pb_encode(&os, meshtastic_User_fields, &user)) {
-    ESP_LOGW(TAG, "User encode failed");
-    return;
-  }
   ESP_LOGD(TAG, "Broadcasting NodeInfo");
-  this->send_data_(meshtastic_PortNum_NODEINFO_APP, buf, os.bytes_written, MESHTASTIC_BROADCAST_ADDR, 0, false);
+  this->send_our_node_info_(MESHTASTIC_BROADCAST_ADDR, 0, false);
 }
 
 }  // namespace meshtastic
