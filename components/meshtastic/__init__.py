@@ -17,6 +17,7 @@ CONF_RADIO = "radio"
 CONF_LONG_NAME = "long_name"
 CONF_SHORT_NAME = "short_name"
 CONF_NODE_NUM = "node_num"
+CONF_PRIVATE_KEY = "private_key"
 CONF_CHANNELS = "channels"
 CONF_PSK = "psk"
 CONF_UPLINK = "uplink"
@@ -322,6 +323,18 @@ def validate_psk(value):
     raise cv.Invalid("psk base64 must decode to 1, 16, or 32 bytes")
 
 
+def validate_private_key(value):
+    # Curve25519 private key: 32 raw bytes, given as base64
+    value = cv.string_strict(value)
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError):
+        raise cv.Invalid("private_key must be base64")
+    if len(raw) != 32:
+        raise cv.Invalid(f"private_key must decode to 32 bytes, got {len(raw)}")
+    return list(raw)
+
+
 CHANNEL_SCHEMA = cv.Schema(
     {
         cv.Required(CONF_NAME): cv.All(cv.string, cv.Length(max=11)),
@@ -340,6 +353,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_LONG_NAME): cv.All(cv.string, cv.Length(max=40)),
         cv.Optional(CONF_SHORT_NAME): cv.All(cv.string, cv.Length(max=4)),
         cv.Optional(CONF_NODE_NUM): cv.hex_uint32_t,
+        cv.Optional(CONF_PRIVATE_KEY): validate_private_key,  # else generated + persisted on first boot
         cv.Optional(CONF_ROLE, default="CLIENT"): cv.enum(_enums.ROLES, upper=True),
         cv.Optional(CONF_HOP_LIMIT, default=3): cv.int_range(min=0, max=7),
         cv.Optional(CONF_NODE_INFO_INTERVAL, default="3h"): validate_node_info_interval,
@@ -379,6 +393,8 @@ async def to_code(config):
         cg.add(var.set_short_name(config[CONF_SHORT_NAME]))
     if CONF_NODE_NUM in config:
         cg.add(var.set_node_num(config[CONF_NODE_NUM]))
+    if CONF_PRIVATE_KEY in config:
+        cg.add(var.set_private_key(config[CONF_PRIVATE_KEY]))
     cg.add(var.set_role(config[CONF_ROLE]))
     cg.add(var.set_hop_limit(config[CONF_HOP_LIMIT]))
     cg.add(var.set_node_info_interval(config[CONF_NODE_INFO_INTERVAL]))

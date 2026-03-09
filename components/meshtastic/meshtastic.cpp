@@ -2,6 +2,7 @@
 #include "esphome/core/hal.h"
 #include "esphome/core/helpers.h"
 
+#include "crypto.h"
 #include "enum_names.h"
 #include "mesh.pb.h"
 #include <pb_decode.h>
@@ -25,6 +26,33 @@ void Meshtastic::add_channel(const std::string &name, const std::vector<uint8_t>
   this->channels_.push_back(ch);
 }
 
+void Meshtastic::set_private_key(const std::vector<uint8_t> &key) {
+  if (key.size() != 32)
+    return;
+  memcpy(this->private_key_, key.data(), 32);
+  this->private_key_configured_ = true;
+}
+
+void Meshtastic::init_keypair_() {
+  if (!this->private_key_configured_) {
+    struct PkcKey {
+      uint8_t key[32];
+    } kp{};
+    this->key_pref_ = global_preferences->make_preference<PkcKey>(fnv1_hash("meshtastic_pkc") ^ this->node_num_);
+    if (this->key_pref_.load(&kp)) {
+      memcpy(this->private_key_, kp.key, 32);
+    } else {
+      random_bytes(this->private_key_, 32);
+      memcpy(kp.key, this->private_key_, 32);
+      this->key_pref_.save(&kp);
+      ESP_LOGW(TAG, "Generated and persisted a new PKC keypair");
+    }
+  }
+  // Public key = clamp(private) * basepoint(9).
+  static const uint8_t basepoint[32] = {9};
+  this->has_keypair_ = x25519_shared(this->private_key_, basepoint, this->public_key_);
+}
+
 void Meshtastic::setup() {
   if (this->node_num_ == 0) {
     uint8_t mac[6];
@@ -35,6 +63,8 @@ void Meshtastic::setup() {
     this->short_name_ = str_snprintf("%04x", 4, this->node_num_ & 0xFFFF);
   if (this->long_name_.empty())
     this->long_name_ = "Meshtastic " + this->short_name_;
+
+  this->init_keypair_();
 
   if (this->node_info_interval_ > 0) {
     this->defer([this]() { this->send_node_info(); });
@@ -410,6 +440,10 @@ void Meshtastic::send_node_info() {
   strncpy(user.short_name, this->short_name_.c_str(), sizeof(user.short_name) - 1);
   user.hw_model = (meshtastic_HardwareModel) this->hw_model_;
   user.role = (meshtastic_Config_DeviceConfig_Role) this->role_;
+  if (this->has_keypair_) {
+    user.public_key.size = sizeof(this->public_key_);
+    memcpy(user.public_key.bytes, this->public_key_, sizeof(this->public_key_));
+  }
 
   uint8_t buf[meshtastic_User_size];
   pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));

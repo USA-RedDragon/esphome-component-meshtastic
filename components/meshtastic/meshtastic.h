@@ -3,6 +3,7 @@
 #include "esphome/core/automation.h"
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
+#include "esphome/core/preferences.h"
 #include "channel.h"
 #include "nodedb.h"
 #include "protocol.h"
@@ -37,6 +38,7 @@ class Meshtastic : public Component
   void set_long_name(const std::string &name) { this->long_name_ = name; }
   void set_short_name(const std::string &name) { this->short_name_ = name; }
   void set_node_num(uint32_t num) { this->node_num_ = num; }
+  void set_private_key(const std::vector<uint8_t> &key);
   void set_role(uint32_t role) { this->role_ = role; }
   void set_hop_limit(uint8_t hop_limit) { this->hop_limit_ = hop_limit; }
   void set_node_info_interval(uint32_t interval_ms) { this->node_info_interval_ = interval_ms; }
@@ -86,6 +88,7 @@ class Meshtastic : public Component
   void send_ack_(uint32_t to, uint32_t request_id, size_t channel_idx);
   int find_channel_index_(const std::string &name);
   void send_telemetry_(const meshtastic_Telemetry &tel, size_t channel_idx, bool want_ack);
+  void init_keypair_();
 
   std::string long_name_;
   std::string short_name_;
@@ -94,6 +97,11 @@ class Meshtastic : public Component
   uint8_t hop_limit_{3};
   uint32_t node_info_interval_{10800000};  // 3 hours
   uint32_t hw_model_{39};  // meshtastic_HardwareModel_DIY_V1
+  uint8_t private_key_[32]{};
+  uint8_t public_key_[32]{};
+  bool has_keypair_{false};
+  bool private_key_configured_{false};
+  ESPPreferenceObject key_pref_;
   std::vector<Channel> channels_;
   PacketDedup dedup_;
   NodeDb nodedb_;

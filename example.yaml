@@ -78,6 +78,7 @@ meshtastic:
     long_name: "ESP32S3"      # <=40 chars; default "Meshtastic <short>"
     short_name: "ESPS"        # <=4 chars; default = last 4 hex of node_num
     node_num: 0xDEAD          # optional; default = last 4 bytes of the MAC
+    # private_key: !secret meshtastic_private_key  # PKI/DM key (base64, 32B); auto-generated + persisted if omitted
     role: CLIENT              # any mainline role (deprecated ones warn at startup)
     hop_limit: 3              # 0-7
     node_info_interval: 3h    # >=1h (Meshtastic minimum); broadcast our NodeInfo this often
