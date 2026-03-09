@@ -90,6 +90,9 @@ void Meshtastic::dump_config() {
   }
   if (this->channels_.empty())
     ESP_LOGW(TAG, "No channels configured; received packets cannot be decoded");
+  ESP_LOGCONFIG(TAG, "  PKC (direct messages): %s",
+                this->has_keypair_ ? (this->private_key_configured_ ? "ready (configured key)" : "ready (generated key)")
+                                   : "key derivation FAILED");
 #ifdef USE_SX126X
   if (this->sx126x_ != nullptr)
     ESP_LOGCONFIG(TAG, "  Radio: SX126x");
