@@ -82,7 +82,8 @@ class Meshtastic : public Component
   void maybe_relay_(const std::vector<uint8_t> &packet, const PacketHeader &h, float snr);
   void transmit_(const std::vector<uint8_t> &packet);
   void send_data_(uint32_t portnum, const uint8_t *payload, size_t payload_len, uint32_t dest, size_t channel_idx,
-                  bool want_ack);
+                  bool want_ack, uint32_t request_id = 0);
+  void send_ack_(uint32_t to, uint32_t request_id, size_t channel_idx);
   int find_channel_index_(const std::string &name);
   void send_telemetry_(const meshtastic_Telemetry &tel, size_t channel_idx, bool want_ack);
 

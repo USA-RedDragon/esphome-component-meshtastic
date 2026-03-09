@@ -206,6 +206,9 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
       for (auto *t : this->on_text_triggers_)
         t->trigger(h.from, h.to, ch.name, text, rssi, snr);
     }
+
+    if (h.want_ack && h.to == this->node_num_ && h.from != 0 && h.from != this->node_num_)
+      this->send_ack_(h.from, h.id, ci);
     return;
   }
   ESP_LOGD(TAG, "  no channel matched hash 0x%02x (or decode failed)", h.channel);
@@ -249,13 +252,14 @@ void Meshtastic::transmit_(const std::vector<uint8_t> &packet) {
 }
 
 void Meshtastic::send_data_(uint32_t portnum, const uint8_t *payload, size_t payload_len, uint32_t dest,
-                            size_t channel_idx, bool want_ack) {
+                            size_t channel_idx, bool want_ack, uint32_t request_id) {
   if (channel_idx >= this->channels_.size())
     return;
   Channel &ch = this->channels_[channel_idx];
 
   meshtastic_Data data = meshtastic_Data_init_zero;
   data.portnum = (meshtastic_PortNum) portnum;
+  data.request_id = request_id;  // non-zero on a ROUTING ack: the id of the packet being acked
   if (payload_len > sizeof(data.payload.bytes))
     return;
   data.payload.size = payload_len;
@@ -289,6 +293,21 @@ void Meshtastic::send_data_(uint32_t portnum, const uint8_t *payload, size_t pay
   this->dedup_.is_duplicate(this->node_num_, id, millis());  // remember our own packet
   ESP_LOGD(TAG, "TX portnum=%u to=!%08x id=0x%08x %uB", portnum, dest, id, (unsigned) packet.size());
   this->transmit_(packet);
+}
+
+void Meshtastic::send_ack_(uint32_t to, uint32_t request_id, size_t channel_idx) {
+  meshtastic_Routing routing = meshtastic_Routing_init_zero;
+  routing.which_variant = meshtastic_Routing_error_reason_tag;
+  routing.error_reason = meshtastic_Routing_Error_NONE;
+
+  uint8_t buf[meshtastic_Routing_size];
+  pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
+  if (!pb_encode(&os, meshtastic_Routing_fields, &routing)) {
+    ESP_LOGW(TAG, "Routing ack encode failed");
+    return;
+  }
+  ESP_LOGD(TAG, "ACK to=!%08x for id=0x%08x", to, request_id);
+  this->send_data_(meshtastic_PortNum_ROUTING_APP, buf, os.bytes_written, to, channel_idx, false, request_id);
 }
 
 int Meshtastic::find_channel_index_(const std::string &name) {
