@@ -89,6 +89,8 @@ class Meshtastic : public Component
   int find_channel_index_(const std::string &name);
   void send_telemetry_(const meshtastic_Telemetry &tel, size_t channel_idx, bool want_ack);
   void init_keypair_();
+  void send_dm_(uint32_t dest, uint32_t portnum, const uint8_t *payload, size_t payload_len, bool want_ack,
+                uint32_t request_id);
   void request_node_info_(uint32_t dest);
   void queue_pending_dm_(uint32_t dest, const std::string &text, bool want_ack);
   void queue_pending_rx_(uint32_t from, const std::vector<uint8_t> &packet, float rssi, float snr);

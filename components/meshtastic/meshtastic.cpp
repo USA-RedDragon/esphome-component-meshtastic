@@ -357,6 +357,7 @@ void Meshtastic::send_text(const std::string &text, uint32_t dest, const std::st
   if (dest != MESHTASTIC_BROADCAST_ADDR && dest != 0 && this->has_keypair_) {
     meshtastic_NodeInfoLite *peer = this->nodedb_.find(dest);
     if (peer != nullptr && peer->has_user && peer->user.public_key.size == 32) {
+      this->send_dm_(dest, meshtastic_PortNum_TEXT_MESSAGE_APP, (const uint8_t *) text.data(), text.size(), want_ack, 0);
     } else {
       this->queue_pending_dm_(dest, text, want_ack);
       this->request_node_info_(dest);
@@ -370,6 +371,74 @@ void Meshtastic::send_text(const std::string &text, uint32_t dest, const std::st
   }
   this->send_data_(meshtastic_PortNum_TEXT_MESSAGE_APP, (const uint8_t *) text.data(), text.size(), dest, idx, want_ack);
 }
+
+// Meshtastic PKC nonce (13 bytes): packet id (4 LE) | extra nonce (4 LE) | from-node (4 LE) | 0.
+static void build_pkc_nonce_(uint8_t nonce[13], uint32_t id, uint32_t from, uint32_t extra) {
+  memset(nonce, 0, 13);
+  memcpy(nonce, &id, 4);
+  memcpy(nonce + 4, &extra, 4);
+  memcpy(nonce + 8, &from, 4);
+}
+
+void Meshtastic::send_dm_(uint32_t dest, uint32_t portnum, const uint8_t *payload, size_t payload_len, bool want_ack,
+                          uint32_t request_id) {
+  meshtastic_NodeInfoLite *peer = this->nodedb_.find(dest);
+  if (peer == nullptr || !peer->has_user || peer->user.public_key.size != 32) {
+    ESP_LOGW(TAG, "send_dm: no public key for !%08x", dest);
+    return;
+  }
+  meshtastic_Data data = meshtastic_Data_init_zero;
+  data.portnum = (meshtastic_PortNum) portnum;
+  data.request_id = request_id;
+  if (payload_len > sizeof(data.payload.bytes))
+    return;
+  data.payload.size = payload_len;
+  memcpy(data.payload.bytes, payload, payload_len);
+  uint8_t databuf[256];
+  pb_ostream_t os = pb_ostream_from_buffer(databuf, sizeof(databuf));
+  if (!pb_encode(&os, meshtastic_Data_fields, &data)) {
+    ESP_LOGW(TAG, "DM Data encode failed");
+    return;
+  }
+
+  uint8_t shared[32];
+  if (!x25519_shared(this->private_key_, peer->user.public_key.bytes, shared))
+    return;
+  uint8_t key[32];
+  sha256_hash(shared, 32, key);
+  uint32_t id = random_uint32();
+  if (id == 0)
+    id = 1;
+  uint32_t extra_nonce = random_uint32();
+  uint8_t nonce[13];
+  build_pkc_nonce_(nonce, id, this->node_num_, extra_nonce);
+
+  // On-wire payload = ciphertext | tag(8) | extra_nonce(4).
+  std::vector<uint8_t> packet(MESHTASTIC_HEADER_LEN + os.bytes_written + 12);
+  uint8_t *ct = packet.data() + MESHTASTIC_HEADER_LEN;
+  uint8_t tag[8];
+  if (!aes_ccm_encrypt(key, nonce, 13, databuf, os.bytes_written, ct, tag, 8)) {
+    ESP_LOGW(TAG, "DM encrypt failed");
+    return;
+  }
+  memcpy(ct + os.bytes_written, tag, 8);
+  memcpy(ct + os.bytes_written + 8, &extra_nonce, 4);
+
+  PacketHeader hh{};
+  hh.to = dest;
+  hh.from = this->node_num_;
+  hh.id = id;
+  hh.hop_limit = this->hop_limit_;
+  hh.hop_start = this->hop_limit_;
+  hh.want_ack = want_ack;
+  hh.channel = 0;  // channel hash 0 marks a PKC direct message
+  serialize_header(hh, packet.data());
+
+  this->dedup_.is_duplicate(this->node_num_, id, millis());  // remember our own packet
+  ESP_LOGD(TAG, "TX PKC DM to=!%08x id=0x%08x %uB", dest, id, (unsigned) packet.size());
+  this->transmit_(packet);
+}
+
 void Meshtastic::request_node_info_(uint32_t dest) {
   meshtastic_User user = meshtastic_User_init_zero;
   snprintf(user.id, sizeof(user.id), "!%08x", this->node_num_);
