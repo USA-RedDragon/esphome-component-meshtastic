@@ -119,6 +119,98 @@ void Meshtastic::on_packet(const std::vector<uint8_t> &packet, float rssi, float
 }
 #endif
 
+void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHeader &h, const std::string &channel_name,
+                                   float rssi, float snr) {
+  if (!this->on_packet_triggers_.empty()) {
+    std::vector<uint8_t> payload(data.payload.bytes, data.payload.bytes + data.payload.size);
+    for (auto *t : this->on_packet_triggers_)
+      t->trigger(h.from, h.to, (uint32_t) data.portnum, payload, rssi, snr);
+  }
+
+  bool node_is_new = false;
+  meshtastic_NodeInfoLite *node = nullptr;
+  if (h.from != 0 && h.from != this->node_num_ && this->nodedb_.enabled()) {
+    node = this->nodedb_.get_or_create(h.from, &node_is_new);
+    node->num = h.from;
+    node->snr = snr;
+    node->last_heard = millis();
+    node->has_hops_away = true;
+    node->hops_away = (h.hop_start >= h.hop_limit) ? (h.hop_start - h.hop_limit) : 0;
+  }
+
+  if (data.portnum == meshtastic_PortNum_NODEINFO_APP && h.from != 0 && h.from != this->node_num_) {
+    meshtastic_User user = meshtastic_User_init_zero;
+    pb_istream_t us = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+    if (pb_decode(&us, meshtastic_User_fields, &user)) {
+      if (node != nullptr) {
+        node->has_user = true;
+        memcpy(node->user.long_name, user.long_name, sizeof(node->user.long_name));
+        memcpy(node->user.short_name, user.short_name, sizeof(node->user.short_name));
+        node->user.hw_model = user.hw_model;
+        node->user.role = user.role;
+        node->user.is_licensed = user.is_licensed;
+        node->user.public_key.size = user.public_key.size;
+        memcpy(node->user.public_key.bytes, user.public_key.bytes, user.public_key.size);
+      }
+      ESP_LOGD(TAG, "  node !%08x \"%s\" (%s) %s", h.from, user.long_name, user.short_name,
+               node == nullptr ? "(db off)" : (node_is_new ? "NEW" : "updated"));
+      for (auto *t : this->on_nodeinfo_triggers_)
+        t->trigger(h.from, channel_name, std::string(user.long_name), std::string(user.short_name),
+                   hardware_model_name(user.hw_model), role_name(user.role), rssi, snr);
+      if (user.public_key.size == 32)
+        this->flush_pending_dms_(h.from);
+    }
+  } else if (node != nullptr && node_is_new) {
+    ESP_LOGD(TAG, "  node !%08x heard (awaiting NodeInfo) [%u known]", h.from, (unsigned) this->nodedb_.size());
+  }
+
+  if (data.portnum == meshtastic_PortNum_POSITION_APP && h.from != 0 && h.from != this->node_num_) {
+    meshtastic_Position pos = meshtastic_Position_init_zero;
+    pb_istream_t ps = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+    if (pb_decode(&ps, meshtastic_Position_fields, &pos)) {
+      if (node != nullptr) {
+        node->has_position = true;
+        node->position.latitude_i = pos.latitude_i;
+        node->position.longitude_i = pos.longitude_i;
+        node->position.altitude = pos.altitude;
+        node->position.time = pos.time;
+        node->position.location_source = pos.location_source;
+      }
+      const double lat = pos.latitude_i * 1e-7;
+      const double lon = pos.longitude_i * 1e-7;
+      ESP_LOGD(TAG, "  position !%08x %.6f, %.6f alt=%dm prec=%ubits", h.from, lat, lon, (int) pos.altitude,
+               pos.precision_bits);
+      for (auto *t : this->on_position_triggers_)
+        t->trigger(h.from, channel_name, lat, lon, pos.altitude, pos.precision_bits, pos.time, rssi, snr);
+    }
+  }
+
+  if (data.portnum == meshtastic_PortNum_TELEMETRY_APP && h.from != 0 && h.from != this->node_num_) {
+    meshtastic_Telemetry tel = meshtastic_Telemetry_init_zero;
+    pb_istream_t ts = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+    if (pb_decode(&ts, meshtastic_Telemetry_fields, &tel) &&
+        tel.which_variant == meshtastic_Telemetry_device_metrics_tag) {
+      const meshtastic_DeviceMetrics &dm = tel.variant.device_metrics;
+      if (node != nullptr) {
+        node->has_device_metrics = true;
+        node->device_metrics = dm;
+      }
+      ESP_LOGD(TAG, "  telemetry !%08x batt=%u%% %.2fV chUtil=%.1f%% airTx=%.1f%%", h.from, dm.battery_level,
+               dm.voltage, dm.channel_utilization, dm.air_util_tx);
+      for (auto *t : this->on_telemetry_triggers_)
+        t->trigger(h.from, channel_name, dm.battery_level, dm.voltage, dm.channel_utilization, dm.air_util_tx,
+                   dm.uptime_seconds, rssi, snr);
+    }
+  }
+
+  if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
+    std::string text((const char *) data.payload.bytes, data.payload.size);
+    ESP_LOGD(TAG, "  text: %s", text.c_str());
+    for (auto *t : this->on_text_triggers_)
+      t->trigger(h.from, h.to, channel_name, text, rssi, snr);
+  }
+}
+
 void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float snr) {
   PacketHeader h;
   if (!parse_header(packet, h)) {
@@ -139,6 +231,28 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
   const uint8_t *cipher = packet.data() + MESHTASTIC_HEADER_LEN;
   const size_t cipher_len = packet.size() - MESHTASTIC_HEADER_LEN;
 
+  // PKC direct message: channel hash 0, addressed to us (not broadcast). Decrypt with the sender's
+  // public key (learned from a prior NodeInfo). If we don't have it yet, buffer the packet and request the
+  // key
+  if (h.channel == 0 && h.to == this->node_num_ && h.from != 0 && h.from != this->node_num_ && this->has_keypair_ &&
+      cipher_len > 12) {
+    meshtastic_NodeInfoLite *peer = this->nodedb_.find(h.from);
+    if (peer != nullptr && peer->has_user && peer->user.public_key.size == 32) {
+      meshtastic_Data data = meshtastic_Data_init_zero;
+      if (this->pkc_decode_(h, cipher, cipher_len, peer->user.public_key.bytes, &data)) {
+        ESP_LOGD(TAG, "  PKC DM from !%08x: portnum=%d payload=%uB", h.from, (int) data.portnum,
+                 (unsigned) data.payload.size);
+        this->dispatch_decoded_(data, h, "", rssi, snr);
+        return;
+      }
+    } else {
+      ESP_LOGD(TAG, "  PKC DM from !%08x but its public key is unknown; buffering + requesting NodeInfo", h.from);
+      this->queue_pending_rx_(h.from, packet, rssi, snr);
+      this->request_node_info_(h.from);
+      return;
+    }
+  }
+
   // Try each channel whose hash matches; decode the first that yields a valid Data.
   for (size_t ci = 0; ci < this->channels_.size(); ci++) {
     Channel &ch = this->channels_[ci];
@@ -153,92 +267,7 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
       continue;
     ESP_LOGD(TAG, "  decoded on \"%s\": portnum=%d payload=%uB", ch.name.c_str(), (int) data.portnum,
              (unsigned) data.payload.size);
-
-    if (!this->on_packet_triggers_.empty()) {
-      std::vector<uint8_t> payload(data.payload.bytes, data.payload.bytes + data.payload.size);
-      for (auto *t : this->on_packet_triggers_)
-        t->trigger(h.from, h.to, (uint32_t) data.portnum, payload, rssi, snr);
-    }
-
-    bool node_is_new = false;
-    meshtastic_NodeInfoLite *node = nullptr;
-    if (h.from != 0 && h.from != this->node_num_ && this->nodedb_.enabled()) {
-      node = this->nodedb_.get_or_create(h.from, &node_is_new);
-      node->num = h.from;
-      node->snr = snr;
-      node->last_heard = millis();
-      node->has_hops_away = true;
-      node->hops_away = (h.hop_start >= h.hop_limit) ? (h.hop_start - h.hop_limit) : 0;
-    }
-
-    if (data.portnum == meshtastic_PortNum_NODEINFO_APP && h.from != 0 && h.from != this->node_num_) {
-      meshtastic_User user = meshtastic_User_init_zero;
-      pb_istream_t us = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
-      if (pb_decode(&us, meshtastic_User_fields, &user)) {
-        if (node != nullptr) {
-          node->has_user = true;
-          memcpy(node->user.long_name, user.long_name, sizeof(node->user.long_name));
-          memcpy(node->user.short_name, user.short_name, sizeof(node->user.short_name));
-          node->user.hw_model = user.hw_model;
-          node->user.role = user.role;
-          node->user.is_licensed = user.is_licensed;
-        }
-        ESP_LOGD(TAG, "  node !%08x \"%s\" (%s) %s", h.from, user.long_name, user.short_name,
-                 node == nullptr ? "(db off)" : (node_is_new ? "NEW" : "updated"));
-        for (auto *t : this->on_nodeinfo_triggers_)
-          t->trigger(h.from, ch.name, std::string(user.long_name), std::string(user.short_name),
-                     hardware_model_name(user.hw_model), role_name(user.role), rssi, snr);
-      }
-    } else if (node != nullptr && node_is_new) {
-      ESP_LOGD(TAG, "  node !%08x heard (awaiting NodeInfo) [%u known]", h.from, (unsigned) this->nodedb_.size());
-    }
-
-    if (data.portnum == meshtastic_PortNum_POSITION_APP && h.from != 0 && h.from != this->node_num_) {
-      meshtastic_Position pos = meshtastic_Position_init_zero;
-      pb_istream_t ps = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
-      if (pb_decode(&ps, meshtastic_Position_fields, &pos)) {
-        if (node != nullptr) {
-          node->has_position = true;
-          node->position.latitude_i = pos.latitude_i;
-          node->position.longitude_i = pos.longitude_i;
-          node->position.altitude = pos.altitude;
-          node->position.time = pos.time;
-          node->position.location_source = pos.location_source;
-        }
-        const double lat = pos.latitude_i * 1e-7;
-        const double lon = pos.longitude_i * 1e-7;
-        ESP_LOGD(TAG, "  position !%08x %.6f, %.6f alt=%dm prec=%ubits", h.from, lat, lon, (int) pos.altitude,
-                 pos.precision_bits);
-        for (auto *t : this->on_position_triggers_)
-          t->trigger(h.from, ch.name, lat, lon, pos.altitude, pos.precision_bits, pos.time, rssi, snr);
-      }
-    }
-
-    if (data.portnum == meshtastic_PortNum_TELEMETRY_APP && h.from != 0 && h.from != this->node_num_) {
-      meshtastic_Telemetry tel = meshtastic_Telemetry_init_zero;
-      pb_istream_t ts = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
-      if (pb_decode(&ts, meshtastic_Telemetry_fields, &tel) &&
-          tel.which_variant == meshtastic_Telemetry_device_metrics_tag) {
-        const meshtastic_DeviceMetrics &dm = tel.variant.device_metrics;
-        if (node != nullptr) {
-          node->has_device_metrics = true;
-          node->device_metrics = dm;  // NodeInfoLite stores the full DeviceMetrics
-        }
-        ESP_LOGD(TAG, "  telemetry !%08x batt=%u%% %.2fV chUtil=%.1f%% airTx=%.1f%%", h.from, dm.battery_level,
-                 dm.voltage, dm.channel_utilization, dm.air_util_tx);
-        for (auto *t : this->on_telemetry_triggers_)
-          t->trigger(h.from, ch.name, dm.battery_level, dm.voltage, dm.channel_utilization, dm.air_util_tx,
-                     dm.uptime_seconds, rssi, snr);
-      }
-    }
-
-    if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
-      std::string text((const char *) data.payload.bytes, data.payload.size);
-      ESP_LOGD(TAG, "  text: %s", text.c_str());
-      for (auto *t : this->on_text_triggers_)
-        t->trigger(h.from, h.to, ch.name, text, rssi, snr);
-    }
-
+    this->dispatch_decoded_(data, h, ch.name, rssi, snr);
     if (h.want_ack && h.to == this->node_num_ && h.from != 0 && h.from != this->node_num_)
       this->send_ack_(h.from, h.id, ci);
     return;
@@ -378,6 +407,30 @@ static void build_pkc_nonce_(uint8_t nonce[13], uint32_t id, uint32_t from, uint
   memcpy(nonce, &id, 4);
   memcpy(nonce + 4, &extra, 4);
   memcpy(nonce + 8, &from, 4);
+}
+
+bool Meshtastic::pkc_decode_(const PacketHeader &h, const uint8_t *cipher, size_t cipher_len,
+                             const uint8_t peer_public_key[32], meshtastic_Data *out) {
+  // On-wire DM payload = ciphertext | tag(8) | extra_nonce(4).
+  const size_t ct_len = cipher_len - 12;
+  const uint8_t *tag = cipher + ct_len;
+  uint32_t extra_nonce;
+  memcpy(&extra_nonce, cipher + ct_len + 8, 4);
+
+  uint8_t shared[32];
+  if (!x25519_shared(this->private_key_, peer_public_key, shared))
+    return false;
+  uint8_t key[32];
+  sha256_hash(shared, 32, key);
+
+  uint8_t nonce[13];
+  build_pkc_nonce_(nonce, h.id, h.from, extra_nonce);  // sender's id + from + their extra nonce
+
+  std::vector<uint8_t> plain(ct_len);
+  if (!aes_ccm_decrypt(key, nonce, 13, cipher, ct_len, tag, 8, plain.data()))
+    return false;
+  pb_istream_t s = pb_istream_from_buffer(plain.data(), ct_len);
+  return pb_decode(&s, meshtastic_Data_fields, out);
 }
 
 void Meshtastic::send_dm_(uint32_t dest, uint32_t portnum, const uint8_t *payload, size_t payload_len, bool want_ack,

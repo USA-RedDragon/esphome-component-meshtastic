@@ -89,6 +89,10 @@ class Meshtastic : public Component
   int find_channel_index_(const std::string &name);
   void send_telemetry_(const meshtastic_Telemetry &tel, size_t channel_idx, bool want_ack);
   void init_keypair_();
+  void dispatch_decoded_(const meshtastic_Data &data, const PacketHeader &h, const std::string &channel_name,
+                         float rssi, float snr);
+  bool pkc_decode_(const PacketHeader &h, const uint8_t *cipher, size_t cipher_len, const uint8_t peer_public_key[32],
+                   meshtastic_Data *out);
   void send_dm_(uint32_t dest, uint32_t portnum, const uint8_t *payload, size_t payload_len, bool want_ack,
                 uint32_t request_id);
   void request_node_info_(uint32_t dest);
