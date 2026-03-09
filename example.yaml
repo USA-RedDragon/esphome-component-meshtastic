@@ -13,6 +13,24 @@ logger:
 api:
   encryption:
     key: !secret api_encryption_key
+  # Expose any send_* action as a Home Assistant service (esphome.meshtastic_*)
+  actions:
+    - action: send_text
+      variables:
+        message: string
+        channel: string
+      then:
+        - meshtastic.send_text:
+            text: !lambda return message;
+            channel: !lambda return channel;
+    - action: send_position
+      variables:
+        latitude: float
+        longitude: float
+      then:
+        - meshtastic.send_position:
+            latitude: !lambda return latitude;
+            longitude: !lambda return longitude;
 
 ota:
   - platform: esphome
