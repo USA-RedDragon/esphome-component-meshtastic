@@ -24,6 +24,22 @@ class NodeDb {
   size_t size() const { return this->nodes_.size(); }
   const NodeVector &nodes() const { return this->nodes_; }
 
+  size_t count_active(uint32_t now, uint32_t window_ms) const {
+    size_t n = 0;
+    for (const auto &nd : this->nodes_)
+      if (now - nd.last_heard <= window_ms)
+        n++;
+    return n;
+  }
+
+  size_t count_neighbors() const {
+    size_t n = 0;
+    for (const auto &nd : this->nodes_)
+      if (nd.has_hops_away && nd.hops_away == 0)
+        n++;
+    return n;
+  }
+
  protected:
   size_t max_nodes_{80};
   NodeVector nodes_;

@@ -13,6 +13,7 @@ from . import _enums
 CODEOWNERS = ["@USA-RedDragon"]
 MULTI_CONF = True
 
+CONF_MESHTASTIC_ID = "meshtastic_id"
 CONF_RADIO = "radio"
 CONF_LONG_NAME = "long_name"
 CONF_SHORT_NAME = "short_name"

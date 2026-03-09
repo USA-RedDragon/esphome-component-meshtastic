@@ -74,7 +74,8 @@ sx126x:
   sync_value: [0x24, 0xb4]
 
 meshtastic:
-  - radio: id_sx126x
+  - id: id_meshtastic
+    radio: id_sx126x
     long_name: "ESP32S3"      # <=40 chars; default "Meshtastic <short>"
     short_name: "ESPS"        # <=4 chars; default = last 4 hex of node_num
     node_num: 0xDEAD          # optional; default = last 4 bytes of the MAC
@@ -117,6 +118,37 @@ meshtastic:
       - logger.log:
           format: "Telemetry !%08x (ch %s): batt=%u pct %.2fV up=%us"
           args: ['from', 'channel.c_str()', 'battery_level', 'voltage', 'uptime_seconds']
+
+# Local status entities (this node / whole-mesh aggregates), surfaced to Home Assistant.
+sensor:
+  - platform: meshtastic
+    meshtastic_id: id_meshtastic
+    nodes_online:
+      name: "Mesh nodes online"   # heard within the last 2h
+    nodes_known:
+      name: "Mesh nodes known"    # total in the node DB
+    neighbors:
+      name: "Mesh neighbors"      # directly heard (0 hops)
+    last_rx_age:
+      name: "Last mesh RX age"    # seconds since any packet was heard
+    rx_packets:
+      name: "Mesh packets received"
+    tx_packets:
+      name: "Mesh packets transmitted"
+    relayed_packets:
+      name: "Mesh packets relayed"
+    dropped_duplicate:
+      name: "Mesh duplicates dropped"
+    no_key:
+      name: "Mesh packets without a key"   # heard on a channel we don't carry (normal)
+    decode_failed:
+      name: "Mesh decode failures"         # hash matched but decrypt/parse failed (bad data)
+
+text_sensor:
+  - platform: meshtastic
+    meshtastic_id: id_meshtastic
+    node_id:
+      name: "Mesh node id"        # our !hex node id
 
 button:
   - platform: template

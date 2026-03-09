@@ -2,6 +2,7 @@
 
 #include "esphome/core/automation.h"
 #include "esphome/core/component.h"
+#include "esphome/core/defines.h"
 #include "esphome/core/log.h"
 #include "esphome/core/preferences.h"
 #include "channel.h"
@@ -10,6 +11,13 @@
 #include "router.h"
 #include <string>
 #include <vector>
+
+#ifdef USE_SENSOR
+#include "esphome/components/sensor/sensor.h"
+#endif
+#ifdef USE_TEXT_SENSOR
+#include "esphome/components/text_sensor/text_sensor.h"
+#endif
 
 #if __has_include("esphome/components/sx126x/sx126x.h")
 #include "esphome/components/sx126x/sx126x.h"
@@ -51,6 +59,22 @@ class Meshtastic : public Component
 #endif
 #ifdef USE_SX127X
   void set_radio(sx127x::SX127x *radio);
+#endif
+
+#ifdef USE_SENSOR
+  void set_nodes_online_sensor(sensor::Sensor *s) { this->nodes_online_sensor_ = s; }
+  void set_nodes_known_sensor(sensor::Sensor *s) { this->nodes_known_sensor_ = s; }
+  void set_neighbors_sensor(sensor::Sensor *s) { this->neighbors_sensor_ = s; }
+  void set_last_rx_age_sensor(sensor::Sensor *s) { this->last_rx_age_sensor_ = s; }
+  void set_rx_packets_sensor(sensor::Sensor *s) { this->rx_packets_sensor_ = s; }
+  void set_tx_packets_sensor(sensor::Sensor *s) { this->tx_packets_sensor_ = s; }
+  void set_relayed_packets_sensor(sensor::Sensor *s) { this->relayed_packets_sensor_ = s; }
+  void set_dropped_duplicate_sensor(sensor::Sensor *s) { this->dropped_duplicate_sensor_ = s; }
+  void set_no_key_sensor(sensor::Sensor *s) { this->no_key_sensor_ = s; }
+  void set_decode_failed_sensor(sensor::Sensor *s) { this->decode_failed_sensor_ = s; }
+#endif
+#ifdef USE_TEXT_SENSOR
+  void set_node_id_text_sensor(text_sensor::TextSensor *s) { this->node_id_text_sensor_ = s; }
 #endif
 
   using OnPacketTrigger = Trigger<uint32_t, uint32_t, uint32_t, std::vector<uint8_t>, float, float>;
@@ -135,6 +159,33 @@ class Meshtastic : public Component
   std::vector<OnNodeInfoTrigger *> on_nodeinfo_triggers_;
   std::vector<OnPositionTrigger *> on_position_triggers_;
   std::vector<OnTelemetryTrigger *> on_telemetry_triggers_;
+
+  // Lifetime diagnostic counters (surfaced via the sensor platform).
+  uint32_t rx_packets_{0};
+  uint32_t tx_packets_{0};
+  uint32_t relayed_packets_{0};
+  uint32_t dropped_duplicate_{0};
+  uint32_t no_key_packets_{0};
+  uint32_t decode_failed_{0};
+  uint32_t last_rx_ms_{0};
+  bool had_rx_{false};
+
+#ifdef USE_SENSOR
+  void publish_stats_();
+  sensor::Sensor *nodes_online_sensor_{nullptr};
+  sensor::Sensor *nodes_known_sensor_{nullptr};
+  sensor::Sensor *neighbors_sensor_{nullptr};
+  sensor::Sensor *last_rx_age_sensor_{nullptr};
+  sensor::Sensor *rx_packets_sensor_{nullptr};
+  sensor::Sensor *tx_packets_sensor_{nullptr};
+  sensor::Sensor *relayed_packets_sensor_{nullptr};
+  sensor::Sensor *dropped_duplicate_sensor_{nullptr};
+  sensor::Sensor *no_key_sensor_{nullptr};
+  sensor::Sensor *decode_failed_sensor_{nullptr};
+#endif
+#ifdef USE_TEXT_SENSOR
+  text_sensor::TextSensor *node_id_text_sensor_{nullptr};
+#endif
 
 #ifdef USE_SX126X
   sx126x::SX126x *sx126x_{nullptr};

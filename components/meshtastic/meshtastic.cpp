@@ -16,6 +16,8 @@ namespace meshtastic {
 
 static const char *const TAG = "meshtastic";
 
+static const uint32_t NODE_ONLINE_WINDOW_MS = 2 * 60 * 60 * 1000;
+
 void Meshtastic::add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink) {
   Channel ch;
   ch.name = name;
@@ -72,7 +74,41 @@ void Meshtastic::setup() {
   }
 
   this->set_interval(15000, [this]() { this->expire_pending_dms_(); });
+
+#ifdef USE_TEXT_SENSOR
+  if (this->node_id_text_sensor_ != nullptr)
+    this->node_id_text_sensor_->publish_state(str_snprintf("!%08x", 9, this->node_num_));
+#endif
+#ifdef USE_SENSOR
+  this->set_interval(30000, [this]() { this->publish_stats_(); });
+#endif
 }
+
+#ifdef USE_SENSOR
+void Meshtastic::publish_stats_() {
+  const uint32_t now = millis();
+  if (this->nodes_online_sensor_ != nullptr)
+    this->nodes_online_sensor_->publish_state(this->nodedb_.count_active(now, NODE_ONLINE_WINDOW_MS));
+  if (this->nodes_known_sensor_ != nullptr)
+    this->nodes_known_sensor_->publish_state(this->nodedb_.size());
+  if (this->neighbors_sensor_ != nullptr)
+    this->neighbors_sensor_->publish_state(this->nodedb_.count_neighbors());
+  if (this->last_rx_age_sensor_ != nullptr && this->had_rx_)
+    this->last_rx_age_sensor_->publish_state((now - this->last_rx_ms_) / 1000.0f);
+  if (this->rx_packets_sensor_ != nullptr)
+    this->rx_packets_sensor_->publish_state(this->rx_packets_);
+  if (this->tx_packets_sensor_ != nullptr)
+    this->tx_packets_sensor_->publish_state(this->tx_packets_);
+  if (this->relayed_packets_sensor_ != nullptr)
+    this->relayed_packets_sensor_->publish_state(this->relayed_packets_);
+  if (this->dropped_duplicate_sensor_ != nullptr)
+    this->dropped_duplicate_sensor_->publish_state(this->dropped_duplicate_);
+  if (this->no_key_sensor_ != nullptr)
+    this->no_key_sensor_->publish_state(this->no_key_packets_);
+  if (this->decode_failed_sensor_ != nullptr)
+    this->decode_failed_sensor_->publish_state(this->decode_failed_);
+}
+#endif
 
 void Meshtastic::dump_config() {
   ESP_LOGCONFIG(TAG, "Meshtastic:");
@@ -228,9 +264,13 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
   ESP_LOGD(TAG, "RX %zuB rssi=%.0f snr=%.1f from=!%08x to=!%08x id=0x%08x ch=0x%02x hop=%u/%u%s%s", packet.size(),
            rssi, snr, h.from, h.to, h.id, h.channel, h.hop_limit, h.hop_start, h.want_ack ? " ack" : "",
            h.via_mqtt ? " mqtt" : "");
+  this->rx_packets_++;
+  this->last_rx_ms_ = millis();
+  this->had_rx_ = true;
 
   if (this->dedup_.is_duplicate(h.from, h.id, millis())) {
     ESP_LOGV(TAG, "  duplicate, ignoring");
+    this->dropped_duplicate_++;
     return;
   }
 
@@ -253,6 +293,9 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
         this->dispatch_decoded_(data, h, "", rssi, snr);
         return;
       }
+      ESP_LOGD(TAG, "  PKC DM from !%08x failed to decrypt", h.from);
+      this->decode_failed_++;
+      return;
     } else {
       ESP_LOGD(TAG, "  PKC DM from !%08x but its public key is unknown; buffering + requesting NodeInfo", h.from);
       this->queue_pending_rx_(h.from, packet, rssi, snr);
@@ -262,10 +305,12 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
   }
 
   // Try each channel whose hash matches; decode the first that yields a valid Data.
+  bool hash_matched = false;
   for (size_t ci = 0; ci < this->channels_.size(); ci++) {
     Channel &ch = this->channels_[ci];
     if (ch.hash != h.channel)
       continue;
+    hash_matched = true;
     std::vector<uint8_t> plain(cipher_len);
     if (!ch.crypt(h.from, h.id, cipher, cipher_len, plain.data()))
       continue;
@@ -280,7 +325,13 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
       this->send_ack_(h.from, h.id, ci);
     return;
   }
-  ESP_LOGD(TAG, "  no channel matched hash 0x%02x (or decode failed)", h.channel);
+  if (hash_matched) {
+    ESP_LOGD(TAG, "  channel hash 0x%02x matched but decode failed", h.channel);
+    this->decode_failed_++;
+  } else {
+    ESP_LOGV(TAG, "  no key for channel hash 0x%02x", h.channel);
+    this->no_key_packets_++;
+  }
 }
 
 void Meshtastic::maybe_relay_(const std::vector<uint8_t> &packet, const PacketHeader &h, float snr) {
@@ -302,10 +353,12 @@ void Meshtastic::maybe_relay_(const std::vector<uint8_t> &packet, const PacketHe
 
   const uint32_t delay = rebroadcast_delay_ms(this->role_, snr);
   ESP_LOGD(TAG, "  relaying in %ums (hop %u->%u)", delay, h.hop_limit, rh.hop_limit);
+  this->relayed_packets_++;
   this->set_timeout(delay, [this, tx]() { this->transmit_(tx); });
 }
 
 void Meshtastic::transmit_(const std::vector<uint8_t> &packet) {
+  this->tx_packets_++;
 #ifdef USE_SX126X
   if (this->sx126x_ != nullptr) {
     this->sx126x_->transmit_packet(packet);
