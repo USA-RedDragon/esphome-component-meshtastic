@@ -83,12 +83,20 @@ class Meshtastic : public Component
   using OnPositionTrigger = Trigger<uint32_t, std::string, meshtastic_Position, float, float>;
   using OnTelemetryTrigger = Trigger<uint32_t, std::string, meshtastic_DeviceMetrics, float, float>;
   using OnEnvironmentTrigger = Trigger<uint32_t, std::string, meshtastic_EnvironmentMetrics, float, float>;
+  using OnAirQualityTrigger = Trigger<uint32_t, std::string, meshtastic_AirQualityMetrics, float, float>;
+  using OnPowerTrigger = Trigger<uint32_t, std::string, meshtastic_PowerMetrics, float, float>;
+  using OnLocalStatsTrigger = Trigger<uint32_t, std::string, meshtastic_LocalStats, float, float>;
+  using OnHealthTrigger = Trigger<uint32_t, std::string, meshtastic_HealthMetrics, float, float>;
   void add_on_packet_trigger(OnPacketTrigger *t) { this->on_packet_triggers_.push_back(t); }
   void add_on_text_trigger(OnTextTrigger *t) { this->on_text_triggers_.push_back(t); }
   void add_on_nodeinfo_trigger(OnNodeInfoTrigger *t) { this->on_nodeinfo_triggers_.push_back(t); }
   void add_on_position_trigger(OnPositionTrigger *t) { this->on_position_triggers_.push_back(t); }
   void add_on_telemetry_trigger(OnTelemetryTrigger *t) { this->on_telemetry_triggers_.push_back(t); }
   void add_on_environment_trigger(OnEnvironmentTrigger *t) { this->on_environment_triggers_.push_back(t); }
+  void add_on_air_quality_trigger(OnAirQualityTrigger *t) { this->on_air_quality_triggers_.push_back(t); }
+  void add_on_power_trigger(OnPowerTrigger *t) { this->on_power_triggers_.push_back(t); }
+  void add_on_local_stats_trigger(OnLocalStatsTrigger *t) { this->on_local_stats_triggers_.push_back(t); }
+  void add_on_health_trigger(OnHealthTrigger *t) { this->on_health_triggers_.push_back(t); }
 
   void send_text(const std::string &text, uint32_t dest, const std::string &channel, bool want_ack);
 
@@ -160,6 +168,10 @@ class Meshtastic : public Component
   std::vector<OnPositionTrigger *> on_position_triggers_;
   std::vector<OnTelemetryTrigger *> on_telemetry_triggers_;
   std::vector<OnEnvironmentTrigger *> on_environment_triggers_;
+  std::vector<OnAirQualityTrigger *> on_air_quality_triggers_;
+  std::vector<OnPowerTrigger *> on_power_triggers_;
+  std::vector<OnLocalStatsTrigger *> on_local_stats_triggers_;
+  std::vector<OnHealthTrigger *> on_health_triggers_;
 
   // Lifetime diagnostic counters (surfaced via the sensor platform).
   uint32_t rx_packets_{0};

@@ -46,6 +46,30 @@ class EnvironmentTrigger : public Trigger<uint32_t, std::string, meshtastic_Envi
   explicit EnvironmentTrigger(Meshtastic *parent) { parent->add_on_environment_trigger(this); }
 };
 
+// TELEMETRY_APP air-quality-metrics. (from, channel, metrics, rssi, snr)
+class AirQualityTrigger : public Trigger<uint32_t, std::string, meshtastic_AirQualityMetrics, float, float> {
+ public:
+  explicit AirQualityTrigger(Meshtastic *parent) { parent->add_on_air_quality_trigger(this); }
+};
+
+// TELEMETRY_APP power-metrics. (from, channel, metrics, rssi, snr)
+class PowerTrigger : public Trigger<uint32_t, std::string, meshtastic_PowerMetrics, float, float> {
+ public:
+  explicit PowerTrigger(Meshtastic *parent) { parent->add_on_power_trigger(this); }
+};
+
+// TELEMETRY_APP local-stats. (from, channel, metrics, rssi, snr)
+class LocalStatsTrigger : public Trigger<uint32_t, std::string, meshtastic_LocalStats, float, float> {
+ public:
+  explicit LocalStatsTrigger(Meshtastic *parent) { parent->add_on_local_stats_trigger(this); }
+};
+
+// TELEMETRY_APP health-metrics. (from, channel, metrics, rssi, snr)
+class HealthTrigger : public Trigger<uint32_t, std::string, meshtastic_HealthMetrics, float, float> {
+ public:
+  explicit HealthTrigger(Meshtastic *parent) { parent->add_on_health_trigger(this); }
+};
+
 // meshtastic.send_text action. dest defaults to broadcast; channel is a channel name (empty = primary).
 template<typename... Ts> class SendTextAction : public Action<Ts...> {
  public:

@@ -34,6 +34,10 @@ CONF_ON_NODEINFO = "on_nodeinfo"
 CONF_ON_POSITION = "on_position"
 CONF_ON_TELEMETRY = "on_telemetry"
 CONF_ON_ENVIRONMENT_METRICS = "on_environment_metrics"
+CONF_ON_AIR_QUALITY_METRICS = "on_air_quality_metrics"
+CONF_ON_POWER_METRICS = "on_power_metrics"
+CONF_ON_LOCAL_STATS = "on_local_stats"
+CONF_ON_HEALTH_METRICS = "on_health_metrics"
 CONF_TEXT = "text"
 CONF_CHANNEL = "channel"
 CONF_TO = "to"
@@ -101,6 +105,10 @@ meshtastic_User = cg.global_ns.struct("meshtastic_User")
 meshtastic_Position = cg.global_ns.struct("meshtastic_Position")
 meshtastic_DeviceMetrics = cg.global_ns.struct("meshtastic_DeviceMetrics")
 meshtastic_EnvironmentMetrics = cg.global_ns.struct("meshtastic_EnvironmentMetrics")
+meshtastic_AirQualityMetrics = cg.global_ns.struct("meshtastic_AirQualityMetrics")
+meshtastic_PowerMetrics = cg.global_ns.struct("meshtastic_PowerMetrics")
+meshtastic_LocalStats = cg.global_ns.struct("meshtastic_LocalStats")
+meshtastic_HealthMetrics = cg.global_ns.struct("meshtastic_HealthMetrics")
 
 PacketTrigger = meshtastic_ns.class_(
     "PacketTrigger",
@@ -127,6 +135,22 @@ TelemetryTrigger = meshtastic_ns.class_(
 EnvironmentTrigger = meshtastic_ns.class_(
     "EnvironmentTrigger",
     automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_EnvironmentMetrics, cg.float_, cg.float_),
+)
+AirQualityTrigger = meshtastic_ns.class_(
+    "AirQualityTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_AirQualityMetrics, cg.float_, cg.float_),
+)
+PowerTrigger = meshtastic_ns.class_(
+    "PowerTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_PowerMetrics, cg.float_, cg.float_),
+)
+LocalStatsTrigger = meshtastic_ns.class_(
+    "LocalStatsTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_LocalStats, cg.float_, cg.float_),
+)
+HealthTrigger = meshtastic_ns.class_(
+    "HealthTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_HealthMetrics, cg.float_, cg.float_),
 )
 SendTextAction = meshtastic_ns.class_("SendTextAction", automation.Action)
 SendPositionAction = meshtastic_ns.class_("SendPositionAction", automation.Action)
@@ -383,6 +407,18 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_ON_ENVIRONMENT_METRICS): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(EnvironmentTrigger)}
         ),
+        cv.Optional(CONF_ON_AIR_QUALITY_METRICS): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(AirQualityTrigger)}
+        ),
+        cv.Optional(CONF_ON_POWER_METRICS): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(PowerTrigger)}
+        ),
+        cv.Optional(CONF_ON_LOCAL_STATS): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(LocalStatsTrigger)}
+        ),
+        cv.Optional(CONF_ON_HEALTH_METRICS): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(HealthTrigger)}
+        ),
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
 ).extend(cv.COMPONENT_SCHEMA)
@@ -481,16 +517,24 @@ async def to_code(config):
             ],
             conf,
         )
-    for conf in config.get(CONF_ON_ENVIRONMENT_METRICS, []):
-        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
-        await automation.build_automation(
-            trigger,
-            [
-                (cg.uint32, "from"),
-                (cg.std_string, "channel"),
-                (meshtastic_EnvironmentMetrics, "metrics"),
-                (cg.float_, "rssi"),
-                (cg.float_, "snr"),
-            ],
-            conf,
-        )
+    # All remaining telemetry-variant triggers share the (from, channel, <metrics struct>, rssi, snr) shape.
+    for conf_key, struct_t in (
+        (CONF_ON_ENVIRONMENT_METRICS, meshtastic_EnvironmentMetrics),
+        (CONF_ON_AIR_QUALITY_METRICS, meshtastic_AirQualityMetrics),
+        (CONF_ON_POWER_METRICS, meshtastic_PowerMetrics),
+        (CONF_ON_LOCAL_STATS, meshtastic_LocalStats),
+        (CONF_ON_HEALTH_METRICS, meshtastic_HealthMetrics),
+    ):
+        for conf in config.get(conf_key, []):
+            trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+            await automation.build_automation(
+                trigger,
+                [
+                    (cg.uint32, "from"),
+                    (cg.std_string, "channel"),
+                    (struct_t, "metrics"),
+                    (cg.float_, "rssi"),
+                    (cg.float_, "snr"),
+                ],
+                conf,
+            )

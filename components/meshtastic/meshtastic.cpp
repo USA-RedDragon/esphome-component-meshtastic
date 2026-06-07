@@ -254,6 +254,30 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
             t->trigger(h.from, channel_name, em, rssi, snr);
           break;
         }
+        case meshtastic_Telemetry_air_quality_metrics_tag: {
+          ESP_LOGD(TAG, "  air-quality telemetry !%08x", h.from);
+          for (auto *t : this->on_air_quality_triggers_)
+            t->trigger(h.from, channel_name, tel.variant.air_quality_metrics, rssi, snr);
+          break;
+        }
+        case meshtastic_Telemetry_power_metrics_tag: {
+          ESP_LOGD(TAG, "  power telemetry !%08x", h.from);
+          for (auto *t : this->on_power_triggers_)
+            t->trigger(h.from, channel_name, tel.variant.power_metrics, rssi, snr);
+          break;
+        }
+        case meshtastic_Telemetry_local_stats_tag: {
+          ESP_LOGD(TAG, "  local-stats telemetry !%08x", h.from);
+          for (auto *t : this->on_local_stats_triggers_)
+            t->trigger(h.from, channel_name, tel.variant.local_stats, rssi, snr);
+          break;
+        }
+        case meshtastic_Telemetry_health_metrics_tag: {
+          ESP_LOGD(TAG, "  health telemetry !%08x", h.from);
+          for (auto *t : this->on_health_triggers_)
+            t->trigger(h.from, channel_name, tel.variant.health_metrics, rssi, snr);
+          break;
+        }
         default:
           ESP_LOGD(TAG, "  telemetry !%08x variant=%d (unhandled)", h.from, (int) tel.which_variant);
           break;
