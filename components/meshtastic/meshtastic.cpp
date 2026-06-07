@@ -378,6 +378,17 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
     }
   }
 
+  // Remote admin is not supported: never act on AdminMessage; deny directed requests, never crash (P7).
+  if (data.portnum == meshtastic_PortNum_ADMIN_APP && h.from != 0 && h.from != this->node_num_) {
+    ESP_LOGW(TAG, "  admin request from !%08x denied (remote admin not supported)", h.from);
+    if (data.want_response && h.to == this->node_num_) {
+      int ridx = this->find_channel_index_(channel_name);
+      if (ridx < 0)
+        ridx = 0;
+      this->send_routing_error_(h.from, h.id, ridx, meshtastic_Routing_Error_NOT_AUTHORIZED);
+    }
+  }
+
   if (data.portnum == meshtastic_PortNum_NEIGHBORINFO_APP && h.from != 0 && h.from != this->node_num_) {
     meshtastic_NeighborInfo ni = meshtastic_NeighborInfo_init_zero;
     pb_istream_t ns = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
