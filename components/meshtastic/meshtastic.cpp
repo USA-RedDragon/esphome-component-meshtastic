@@ -399,6 +399,16 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
     }
   }
 
+  if (data.portnum == meshtastic_PortNum_WAYPOINT_APP && h.from != 0 && h.from != this->node_num_) {
+    meshtastic_Waypoint wp = meshtastic_Waypoint_init_zero;
+    pb_istream_t ws = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+    if (pb_decode(&ws, meshtastic_Waypoint_fields, &wp)) {
+      ESP_LOGD(TAG, "  waypoint !%08x id=%u \"%s\"", h.from, wp.id, wp.name);
+      for (auto *t : this->on_waypoint_triggers_)
+        t->trigger(h.from, channel_name, wp, rssi, snr);
+    }
+  }
+
   if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
     std::string text((const char *) data.payload.bytes, data.payload.size);
     ESP_LOGD(TAG, "  text: %s", text.c_str());

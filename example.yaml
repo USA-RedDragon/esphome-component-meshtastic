@@ -132,6 +132,10 @@ meshtastic:
       - logger.log:
           format: "NeighborInfo !%08x: %u neighbors"
           args: ['from', '(unsigned) info.neighbors_count']
+    on_waypoint:
+      - logger.log:
+          format: "Waypoint !%08x id=%u \"%s\" @ %.6f, %.6f"
+          args: ['from', 'waypoint.id', 'waypoint.name', 'waypoint.latitude_i * 1e-7', 'waypoint.longitude_i * 1e-7']
 
 # Local status entities (this node / whole-mesh aggregates), surfaced to Home Assistant.
 sensor:

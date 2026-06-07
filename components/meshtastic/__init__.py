@@ -40,6 +40,7 @@ CONF_ON_LOCAL_STATS = "on_local_stats"
 CONF_ON_HEALTH_METRICS = "on_health_metrics"
 CONF_ON_TRACEROUTE_RESPONSE = "on_traceroute_response"
 CONF_ON_NEIGHBOR_INFO = "on_neighbor_info"
+CONF_ON_WAYPOINT = "on_waypoint"
 CONF_NEIGHBOR_INFO_INTERVAL = "neighbor_info_interval"
 CONF_TEXT = "text"
 CONF_CHANNEL = "channel"
@@ -124,6 +125,7 @@ meshtastic_LocalStats = cg.global_ns.struct("meshtastic_LocalStats")
 meshtastic_HealthMetrics = cg.global_ns.struct("meshtastic_HealthMetrics")
 meshtastic_RouteDiscovery = cg.global_ns.struct("meshtastic_RouteDiscovery")
 meshtastic_NeighborInfo = cg.global_ns.struct("meshtastic_NeighborInfo")
+meshtastic_Waypoint = cg.global_ns.struct("meshtastic_Waypoint")
 
 PacketTrigger = meshtastic_ns.class_(
     "PacketTrigger",
@@ -174,6 +176,10 @@ TraceRouteResponseTrigger = meshtastic_ns.class_(
 NeighborInfoTrigger = meshtastic_ns.class_(
     "NeighborInfoTrigger",
     automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_NeighborInfo, cg.float_, cg.float_),
+)
+WaypointTrigger = meshtastic_ns.class_(
+    "WaypointTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_Waypoint, cg.float_, cg.float_),
 )
 SendTextAction = meshtastic_ns.class_("SendTextAction", automation.Action)
 SendPositionAction = meshtastic_ns.class_("SendPositionAction", automation.Action)
@@ -470,6 +476,9 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_ON_NEIGHBOR_INFO): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(NeighborInfoTrigger)}
         ),
+        cv.Optional(CONF_ON_WAYPOINT): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(WaypointTrigger)}
+        ),
         cv.Optional(CONF_NEIGHBOR_INFO_INTERVAL): validate_neighbor_info_interval,  # omit to disable
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
@@ -615,6 +624,20 @@ async def to_code(config):
                 (cg.uint32, "from"),
                 (cg.std_string, "channel"),
                 (meshtastic_NeighborInfo, "info"),
+                (cg.float_, "rssi"),
+                (cg.float_, "snr"),
+            ],
+            conf,
+        )
+
+    for conf in config.get(CONF_ON_WAYPOINT, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        await automation.build_automation(
+            trigger,
+            [
+                (cg.uint32, "from"),
+                (cg.std_string, "channel"),
+                (meshtastic_Waypoint, "waypoint"),
                 (cg.float_, "rssi"),
                 (cg.float_, "snr"),
             ],

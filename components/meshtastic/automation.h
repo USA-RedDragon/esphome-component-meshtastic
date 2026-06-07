@@ -76,6 +76,12 @@ class NeighborInfoTrigger : public Trigger<uint32_t, std::string, meshtastic_Nei
   explicit NeighborInfoTrigger(Meshtastic *parent) { parent->add_on_neighbor_info_trigger(this); }
 };
 
+// WAYPOINT_APP. (from, channel, waypoint, rssi, snr)
+class WaypointTrigger : public Trigger<uint32_t, std::string, meshtastic_Waypoint, float, float> {
+ public:
+  explicit WaypointTrigger(Meshtastic *parent) { parent->add_on_waypoint_trigger(this); }
+};
+
 // Fires when the reply to a traceroute we initiated returns. (from, channel, route, rssi, snr): the decoded
 // RouteDiscovery (route/snr_towards outbound, route_back/snr_back on the return; SNRs are dB*4 as int8).
 class TraceRouteResponseTrigger : public Trigger<uint32_t, std::string, meshtastic_RouteDiscovery, float, float> {
