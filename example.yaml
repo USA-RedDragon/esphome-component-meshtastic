@@ -122,6 +122,11 @@ meshtastic:
       - logger.log:
           format: "Env !%08x (ch %s): %.1fC %.0f%%RH %.1fhPa lux=%.0f iaq=%u"
           args: ['from', 'channel.c_str()', 'metrics.temperature', 'metrics.relative_humidity', 'metrics.barometric_pressure', 'metrics.lux', 'metrics.iaq']
+    on_traceroute_response:
+      # Fires when a meshtastic.traceroute we sent comes back; `route` is the decoded RouteDiscovery.
+      - logger.log:
+          format: "Traceroute reply via !%08x: %u out, %u back"
+          args: ['from', '(unsigned) route.route_count', '(unsigned) route.route_back_count']
 
 # Local status entities (this node / whole-mesh aggregates), surfaced to Home Assistant.
 sensor:
@@ -178,6 +183,14 @@ button:
     name: "Re-broadcast NodeInfo"
     on_press:
       - meshtastic.send_node_info:
+
+  - platform: template
+    name: "Traceroute to node"
+    on_press:
+      # Probe the path to a node; the discovered route is logged when the reply returns.
+      - meshtastic.traceroute:
+          to: 0xDEADBEEF
+          channel: LongFast      # by name; omit for primary
 
   - platform: template
     name: "Send environment"

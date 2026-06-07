@@ -357,6 +357,24 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
     }
   }
 
+  // Traceroute reply to a traceroute we initiated (meshtastic.traceroute): log the discovered path.
+  if (data.portnum == meshtastic_PortNum_TRACEROUTE_APP && !data.want_response && h.to == this->node_num_) {
+    meshtastic_RouteDiscovery rd = meshtastic_RouteDiscovery_init_zero;
+    pb_istream_t rs = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+    if (pb_decode(&rs, meshtastic_RouteDiscovery_fields, &rd)) {
+      ESP_LOGI(TAG, "Traceroute to !%08x: %u hops out, %u back", h.from, (unsigned) rd.route_count,
+               (unsigned) rd.route_back_count);
+      for (pb_size_t i = 0; i < rd.route_count; i++)
+        ESP_LOGI(TAG, "  out[%u] !%08x snr=%.2f", (unsigned) i, rd.route[i],
+                 i < rd.snr_towards_count ? rd.snr_towards[i] / 4.0f : NAN);
+      for (pb_size_t i = 0; i < rd.route_back_count; i++)
+        ESP_LOGI(TAG, "  back[%u] !%08x snr=%.2f", (unsigned) i, rd.route_back[i],
+                 i < rd.snr_back_count ? rd.snr_back[i] / 4.0f : NAN);
+      for (auto *t : this->on_traceroute_response_triggers_)
+        t->trigger(h.from, channel_name, rd, rssi, snr);
+    }
+  }
+
   if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
     std::string text((const char *) data.payload.bytes, data.payload.size);
     ESP_LOGD(TAG, "  text: %s", text.c_str());
@@ -978,6 +996,23 @@ void Meshtastic::send_node_info() {
     return;
   ESP_LOGD(TAG, "Broadcasting NodeInfo");
   this->send_our_node_info_(MESHTASTIC_BROADCAST_ADDR, 0, false);
+}
+
+void Meshtastic::send_traceroute(uint32_t dest, const std::string &channel, bool want_ack) {
+  const int idx = this->find_channel_index_(channel);
+  if (idx < 0) {
+    ESP_LOGW(TAG, "traceroute: unknown channel \"%s\"", channel.c_str());
+    return;
+  }
+  meshtastic_RouteDiscovery rd = meshtastic_RouteDiscovery_init_zero;  // empty route; hops appended along the way
+  uint8_t buf[meshtastic_RouteDiscovery_size];
+  pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
+  if (!pb_encode(&os, meshtastic_RouteDiscovery_fields, &rd)) {
+    ESP_LOGW(TAG, "RouteDiscovery encode failed");
+    return;
+  }
+  ESP_LOGD(TAG, "TX traceroute to !%08x", dest);
+  this->send_data_(meshtastic_PortNum_TRACEROUTE_APP, buf, os.bytes_written, dest, idx, want_ack, 0, true);
 }
 
 }  // namespace meshtastic

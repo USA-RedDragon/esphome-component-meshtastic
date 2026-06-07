@@ -38,6 +38,7 @@ CONF_ON_AIR_QUALITY_METRICS = "on_air_quality_metrics"
 CONF_ON_POWER_METRICS = "on_power_metrics"
 CONF_ON_LOCAL_STATS = "on_local_stats"
 CONF_ON_HEALTH_METRICS = "on_health_metrics"
+CONF_ON_TRACEROUTE_RESPONSE = "on_traceroute_response"
 CONF_TEXT = "text"
 CONF_CHANNEL = "channel"
 CONF_TO = "to"
@@ -109,6 +110,7 @@ meshtastic_AirQualityMetrics = cg.global_ns.struct("meshtastic_AirQualityMetrics
 meshtastic_PowerMetrics = cg.global_ns.struct("meshtastic_PowerMetrics")
 meshtastic_LocalStats = cg.global_ns.struct("meshtastic_LocalStats")
 meshtastic_HealthMetrics = cg.global_ns.struct("meshtastic_HealthMetrics")
+meshtastic_RouteDiscovery = cg.global_ns.struct("meshtastic_RouteDiscovery")
 
 PacketTrigger = meshtastic_ns.class_(
     "PacketTrigger",
@@ -152,11 +154,16 @@ HealthTrigger = meshtastic_ns.class_(
     "HealthTrigger",
     automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_HealthMetrics, cg.float_, cg.float_),
 )
+TraceRouteResponseTrigger = meshtastic_ns.class_(
+    "TraceRouteResponseTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_RouteDiscovery, cg.float_, cg.float_),
+)
 SendTextAction = meshtastic_ns.class_("SendTextAction", automation.Action)
 SendPositionAction = meshtastic_ns.class_("SendPositionAction", automation.Action)
 SendTelemetryAction = meshtastic_ns.class_("SendTelemetryAction", automation.Action)
 SendEnvironmentMetricsAction = meshtastic_ns.class_("SendEnvironmentMetricsAction", automation.Action)
 SendNodeInfoAction = meshtastic_ns.class_("SendNodeInfoAction", automation.Action)
+SendTraceRouteAction = meshtastic_ns.class_("SendTraceRouteAction", automation.Action)
 
 
 @automation.register_action(
@@ -310,6 +317,27 @@ async def send_node_info_to_code(config, action_id, template_arg, args):
     return cg.new_Pvariable(action_id, template_arg, await cg.get_variable(config[CONF_ID]))
 
 
+@automation.register_action(
+    "meshtastic.traceroute",
+    SendTraceRouteAction,
+    cv.Schema(
+        {
+            cv.GenerateID(): cv.use_id(Meshtastic),
+            cv.Required(CONF_TO): cv.templatable(cv.hex_uint32_t),
+            cv.Optional(CONF_CHANNEL, default=""): cv.templatable(cv.string),
+            cv.Optional(CONF_WANT_ACK, default=False): cv.templatable(cv.boolean),
+        }
+    ),
+    synchronous=True,
+)
+async def traceroute_to_code(config, action_id, template_arg, args):
+    var = cg.new_Pvariable(action_id, template_arg, await cg.get_variable(config[CONF_ID]))
+    cg.add(var.set_dest(await cg.templatable(config[CONF_TO], args, cg.uint32)))
+    cg.add(var.set_channel(await cg.templatable(config[CONF_CHANNEL], args, cg.std_string)))
+    cg.add(var.set_want_ack(await cg.templatable(config[CONF_WANT_ACK], args, cg.bool_)))
+    return var
+
+
 def _expand_psk_index(idx):
     # Meshtastic 1-byte PSK: 0 = no encryption, otherwise the default key with its last byte
     # bumped by (idx - 1). Any byte value 0-255 is valid (idx 1 == the unmodified default key).
@@ -418,6 +446,9 @@ CONFIG_SCHEMA = cv.Schema(
         ),
         cv.Optional(CONF_ON_HEALTH_METRICS): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(HealthTrigger)}
+        ),
+        cv.Optional(CONF_ON_TRACEROUTE_RESPONSE): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(TraceRouteResponseTrigger)}
         ),
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
@@ -538,3 +569,17 @@ async def to_code(config):
                 ],
                 conf,
             )
+
+    for conf in config.get(CONF_ON_TRACEROUTE_RESPONSE, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        await automation.build_automation(
+            trigger,
+            [
+                (cg.uint32, "from"),
+                (cg.std_string, "channel"),
+                (meshtastic_RouteDiscovery, "route"),
+                (cg.float_, "rssi"),
+                (cg.float_, "snr"),
+            ],
+            conf,
+        )

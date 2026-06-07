@@ -70,6 +70,13 @@ class HealthTrigger : public Trigger<uint32_t, std::string, meshtastic_HealthMet
   explicit HealthTrigger(Meshtastic *parent) { parent->add_on_health_trigger(this); }
 };
 
+// Fires when the reply to a traceroute we initiated returns. (from, channel, route, rssi, snr): the decoded
+// RouteDiscovery (route/snr_towards outbound, route_back/snr_back on the return; SNRs are dB*4 as int8).
+class TraceRouteResponseTrigger : public Trigger<uint32_t, std::string, meshtastic_RouteDiscovery, float, float> {
+ public:
+  explicit TraceRouteResponseTrigger(Meshtastic *parent) { parent->add_on_traceroute_response_trigger(this); }
+};
+
 // meshtastic.send_text action. dest defaults to broadcast; channel is a channel name (empty = primary).
 template<typename... Ts> class SendTextAction : public Action<Ts...> {
  public:
@@ -238,6 +245,22 @@ template<typename... Ts> class SendNodeInfoAction : public Action<Ts...> {
  public:
   explicit SendNodeInfoAction(Meshtastic *parent) : parent_(parent) {}
   void play(const Ts &...x) override { this->parent_->send_node_info(); }
+
+ protected:
+  Meshtastic *parent_;
+};
+
+// meshtastic.traceroute: probe the path to a node; the discovered route is logged when the reply returns.
+template<typename... Ts> class SendTraceRouteAction : public Action<Ts...> {
+ public:
+  explicit SendTraceRouteAction(Meshtastic *parent) : parent_(parent) {}
+  TEMPLATABLE_VALUE(uint32_t, dest)
+  TEMPLATABLE_VALUE(std::string, channel)
+  TEMPLATABLE_VALUE(bool, want_ack)
+
+  void play(const Ts &...x) override {
+    this->parent_->send_traceroute(this->dest_.value(x...), this->channel_.value(x...), this->want_ack_.value(x...));
+  }
 
  protected:
   Meshtastic *parent_;
