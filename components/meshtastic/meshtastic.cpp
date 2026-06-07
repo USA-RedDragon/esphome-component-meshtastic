@@ -11,6 +11,14 @@
 #include <cstdio>
 #include <cstring>
 
+#ifdef USE_MESH_UDP
+#include "esphome/components/socket/headers.h"
+#if __has_include("esphome/components/network/util.h")
+#include "esphome/components/network/util.h"
+#define MESH_HAS_NETWORK 1
+#endif
+#endif
+
 namespace esphome {
 namespace meshtastic {
 
@@ -703,6 +711,9 @@ void Meshtastic::relay_traceroute_(const PacketHeader &h, const meshtastic_Data 
 
 void Meshtastic::transmit_(const std::vector<uint8_t> &packet) {
   this->tx_packets_++;
+#ifdef USE_MESH_UDP
+  this->udp_broadcast_(packet);
+#endif
 #ifdef USE_SX126X
   if (this->sx126x_ != nullptr) {
     this->sx126x_->transmit_packet(packet);
@@ -1205,6 +1216,117 @@ void Meshtastic::send_traceroute(uint32_t dest, const std::string &channel, bool
   ESP_LOGD(TAG, "TX traceroute to !%08x", dest);
   this->send_data_(meshtastic_PortNum_TRACEROUTE_APP, buf, os.bytes_written, dest, idx, want_ack, 0, true);
 }
+
+#ifdef USE_MESH_UDP
+void Meshtastic::udp_setup_() {
+  if (!this->udp_enabled_)
+    return;
+  this->udp_socket_ = socket::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (this->udp_socket_ == nullptr) {
+    ESP_LOGE(TAG, "UDP: socket() failed");
+    return;
+  }
+  int reuse = 1;
+  this->udp_socket_->setsockopt(SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+  this->udp_socket_->setblocking(false);
+  struct sockaddr_in bind_addr {};
+  bind_addr.sin_family = AF_INET;
+  bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  bind_addr.sin_port = htons(this->udp_port_);
+  if (this->udp_socket_->bind((struct sockaddr *) &bind_addr, sizeof(bind_addr)) != 0) {
+    ESP_LOGE(TAG, "UDP: bind(%u) failed", this->udp_port_);
+    this->udp_socket_ = nullptr;
+    return;
+  }
+  struct ip_mreq mreq {};
+  mreq.imr_multiaddr.s_addr = inet_addr(this->udp_address_.c_str());
+  mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+  if (this->udp_socket_->setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) != 0)
+    ESP_LOGW(TAG, "UDP: multicast join of %s failed (no network yet?)", this->udp_address_.c_str());
+  ESP_LOGI(TAG, "UDP bridge active on %s:%u", this->udp_address_.c_str(), this->udp_port_);
+}
+
+void Meshtastic::udp_broadcast_(const std::vector<uint8_t> &frame) {
+  if (this->udp_socket_ == nullptr || frame.size() < MESHTASTIC_HEADER_LEN)
+    return;
+  PacketHeader h;
+  if (!parse_header(frame, h))
+    return;
+  meshtastic_MeshPacket mp = meshtastic_MeshPacket_init_zero;
+  mp.from = h.from;
+  mp.to = h.to;
+  mp.id = h.id;
+  mp.channel = h.channel;
+  mp.hop_limit = h.hop_limit;
+  mp.hop_start = h.hop_start;
+  mp.want_ack = h.want_ack;
+  mp.via_mqtt = h.via_mqtt;
+  mp.next_hop = h.next_hop;
+  mp.relay_node = h.relay_node;
+  mp.which_payload_variant = meshtastic_MeshPacket_encrypted_tag;
+  const size_t clen = frame.size() - MESHTASTIC_HEADER_LEN;
+  if (clen > sizeof(mp.encrypted.bytes))
+    return;
+  mp.encrypted.size = clen;
+  memcpy(mp.encrypted.bytes, frame.data() + MESHTASTIC_HEADER_LEN, clen);
+
+  uint8_t buf[meshtastic_MeshPacket_size];
+  pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
+  if (!pb_encode(&os, meshtastic_MeshPacket_fields, &mp))
+    return;
+  struct sockaddr_in dest {};
+  dest.sin_family = AF_INET;
+  dest.sin_addr.s_addr = inet_addr(this->udp_address_.c_str());
+  dest.sin_port = htons(this->udp_port_);
+  this->udp_socket_->sendto(buf, os.bytes_written, 0, (struct sockaddr *) &dest, sizeof(dest));
+}
+
+void Meshtastic::loop() {
+  if (this->udp_socket_ == nullptr) {
+#ifdef MESH_HAS_NETWORK
+    const uint32_t now = millis();
+    if (this->udp_enabled_ && network::is_connected() &&
+        (this->udp_last_setup_attempt_ms_ == 0 || now - this->udp_last_setup_attempt_ms_ > 5000)) {
+      this->udp_last_setup_attempt_ms_ = now;
+      this->udp_setup_();
+    }
+#endif
+    if (this->udp_socket_ == nullptr)
+      return;
+  }
+  uint8_t buf[meshtastic_MeshPacket_size];
+  while (this->udp_socket_->ready()) {
+    struct sockaddr_storage src {};
+    socklen_t srclen = sizeof(src);
+    ssize_t n = this->udp_socket_->recvfrom(buf, sizeof(buf), (struct sockaddr *) &src, &srclen);
+    if (n <= 0)
+      break;
+    meshtastic_MeshPacket mp = meshtastic_MeshPacket_init_zero;
+    pb_istream_t s = pb_istream_from_buffer(buf, (size_t) n);
+    if (!pb_decode(&s, meshtastic_MeshPacket_fields, &mp))
+      continue;
+    if (mp.which_payload_variant != meshtastic_MeshPacket_encrypted_tag)
+      continue;
+    if (mp.from == 0 || mp.from == this->node_num_)
+      continue;
+    PacketHeader hh{};
+    hh.to = mp.to;
+    hh.from = mp.from;
+    hh.id = mp.id;
+    hh.hop_limit = mp.hop_limit;
+    hh.want_ack = mp.want_ack;
+    hh.via_mqtt = mp.via_mqtt;
+    hh.hop_start = mp.hop_start;
+    hh.channel = mp.channel;
+    hh.next_hop = mp.next_hop;
+    hh.relay_node = mp.relay_node;
+    std::vector<uint8_t> frame(MESHTASTIC_HEADER_LEN + mp.encrypted.size);
+    serialize_header(hh, frame.data());
+    memcpy(frame.data() + MESHTASTIC_HEADER_LEN, mp.encrypted.bytes, mp.encrypted.size);
+    this->handle_rx(frame, 0.0f, 0.0f);
+  }
+}
+#endif  // USE_MESH_UDP
 
 }  // namespace meshtastic
 }  // namespace esphome

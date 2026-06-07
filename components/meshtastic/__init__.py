@@ -12,6 +12,7 @@ from . import _enums
 
 CODEOWNERS = ["@USA-RedDragon"]
 MULTI_CONF = True
+AUTO_LOAD = ["socket"]
 
 CONF_MESHTASTIC_ID = "meshtastic_id"
 CONF_RADIO = "radio"
@@ -30,6 +31,9 @@ CONF_HW_MODEL = "hw_model"
 CONF_NODE_DB_SIZE = "node_db_size"
 CONF_REQUEST_UNKNOWN_NODE_INFO = "request_unknown_node_info"
 CONF_PERSIST_NODE_DB = "persist_node_db"
+CONF_UDP = "udp"
+CONF_ADDRESS = "address"
+CONF_PORT = "port"
 CONF_ON_PACKET = "on_packet"
 CONF_ON_TEXT = "on_text"
 CONF_ON_NODEINFO = "on_nodeinfo"
@@ -427,6 +431,15 @@ CHANNEL_SCHEMA = cv.Schema(
     }
 )
 
+UDP_SCHEMA = cv.Schema(
+    {
+        # Meshtastic-over-UDP local bridge. Default group 224.0.0.69:4403 (matches firmware; note the
+        # group lies in a reserved range, so it can be overridden).
+        cv.Optional(CONF_ADDRESS, default="224.0.0.69"): cv.string,
+        cv.Optional(CONF_PORT, default=4403): cv.port,
+    }
+)
+
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(Meshtastic),
@@ -484,6 +497,7 @@ CONFIG_SCHEMA = cv.Schema(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(WaypointTrigger)}
         ),
         cv.Optional(CONF_NEIGHBOR_INFO_INTERVAL): validate_neighbor_info_interval,  # omit to disable
+        cv.Optional(CONF_UDP): UDP_SCHEMA,
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
 ).extend(cv.COMPONENT_SCHEMA)
@@ -515,6 +529,8 @@ async def to_code(config):
     cg.add(var.set_node_db_size(node_db_size))
     cg.add(var.set_request_unknown_node_info(config[CONF_REQUEST_UNKNOWN_NODE_INFO]))
     cg.add(var.set_persist_node_db(config[CONF_PERSIST_NODE_DB]))
+    if CONF_UDP in config:
+        cg.add(var.set_udp(config[CONF_UDP][CONF_ADDRESS], config[CONF_UDP][CONF_PORT]))
 
     for ch in config.get(CONF_CHANNELS, []):
         cg.add(var.add_channel(ch[CONF_NAME], ch[CONF_PSK], ch[CONF_UPLINK], ch[CONF_DOWNLINK]))

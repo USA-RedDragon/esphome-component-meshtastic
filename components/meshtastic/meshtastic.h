@@ -29,6 +29,12 @@
 #define USE_SX127X 1
 #endif
 
+#if __has_include("esphome/components/socket/socket.h")
+#include "esphome/components/socket/socket.h"
+#include <memory>
+#define USE_MESH_UDP 1
+#endif
+
 namespace esphome {
 namespace meshtastic {
 
@@ -56,6 +62,13 @@ class Meshtastic : public Component
   void set_node_db_size(uint32_t size) { this->nodedb_.set_max_nodes(size); }
   void set_request_unknown_node_info(bool enable) { this->request_unknown_node_info_ = enable; }
   void set_persist_node_db(bool enable) { this->persist_node_db_ = enable; }
+#ifdef USE_MESH_UDP
+  void set_udp(const std::string &address, uint16_t port) {
+    this->udp_address_ = address;
+    this->udp_port_ = port;
+    this->udp_enabled_ = true;
+  }
+#endif
   void add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink);
 
 #ifdef USE_SX126X
@@ -122,6 +135,10 @@ class Meshtastic : public Component
 
   void handle_rx(const std::vector<uint8_t> &packet, float rssi, float snr);
 
+#ifdef USE_MESH_UDP
+  void loop() override;
+#endif
+
 #if defined(USE_SX126X) || defined(USE_SX127X)
   void on_packet(const std::vector<uint8_t> &packet, float rssi, float snr) override;
 #endif
@@ -151,6 +168,10 @@ class Meshtastic : public Component
   void maybe_request_node_info_(uint32_t node);  // rate-limited; only when request_unknown_node_info_ is set
   void load_nodedb_();
   void save_nodedb_();
+#ifdef USE_MESH_UDP
+  void udp_setup_();
+  void udp_broadcast_(const std::vector<uint8_t> &frame);
+#endif
   void queue_pending_dm_(uint32_t dest, const std::string &text, bool want_ack);
   void queue_pending_rx_(uint32_t from, const std::vector<uint8_t> &packet, float rssi, float snr);
   void flush_pending_dms_(uint32_t learned_node);
@@ -200,6 +221,13 @@ class Meshtastic : public Component
   NodeDb nodedb_;
   bool request_unknown_node_info_{false};
   bool persist_node_db_{true};
+#ifdef USE_MESH_UDP
+  std::unique_ptr<socket::Socket> udp_socket_;
+  std::string udp_address_;
+  uint16_t udp_port_{4403};
+  bool udp_enabled_{false};
+  uint32_t udp_last_setup_attempt_ms_{0};
+#endif
   std::map<uint32_t, uint32_t> nodeinfo_requested_at_;
   uint32_t last_nodeinfo_request_ms_{0};
   std::vector<OnPacketTrigger *> on_packet_triggers_;

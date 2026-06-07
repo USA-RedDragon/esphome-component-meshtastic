@@ -88,6 +88,9 @@ meshtastic:
     node_db_size: 100         # optional; per-platform default; 0 disables the node DB
     persist_node_db: true     # save/restore named nodes across reboot (false = RAM-only)
     request_unknown_node_info: false  # if true, ask heard-but-unknown peers for their NodeInfo (rate-limited)
+    udp:                      # optional Meshtastic-over-UDP LAN bridge (needs wifi/ethernet)
+      address: 224.0.0.69
+      port: 4403
     channels:
       # psk: 'default' | 'none' | index 0-255 | base64 (1/16/32 bytes) | hex (32/64 chars)
       - name: LongFast
