@@ -70,6 +70,12 @@ class HealthTrigger : public Trigger<uint32_t, std::string, meshtastic_HealthMet
   explicit HealthTrigger(Meshtastic *parent) { parent->add_on_health_trigger(this); }
 };
 
+// NEIGHBORINFO_APP. (from, channel, info, rssi, snr)
+class NeighborInfoTrigger : public Trigger<uint32_t, std::string, meshtastic_NeighborInfo, float, float> {
+ public:
+  explicit NeighborInfoTrigger(Meshtastic *parent) { parent->add_on_neighbor_info_trigger(this); }
+};
+
 // Fires when the reply to a traceroute we initiated returns. (from, channel, route, rssi, snr): the decoded
 // RouteDiscovery (route/snr_towards outbound, route_back/snr_back on the return; SNRs are dB*4 as int8).
 class TraceRouteResponseTrigger : public Trigger<uint32_t, std::string, meshtastic_RouteDiscovery, float, float> {

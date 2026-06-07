@@ -83,6 +83,7 @@ meshtastic:
     role: CLIENT              # any mainline role (deprecated ones warn at startup)
     hop_limit: 3              # 0-7
     node_info_interval: 3h    # >=1h (Meshtastic minimum); broadcast our NodeInfo this often
+    # neighbor_info_interval: 4h  # >=4h; if set, periodically advertise our 0-hop neighbors
     hw_model: DIY_V1          # any HardwareModel
     node_db_size: 100         # optional; per-platform default; 0 disables the node DB
     channels:
@@ -127,6 +128,10 @@ meshtastic:
       - logger.log:
           format: "Traceroute reply via !%08x: %u out, %u back"
           args: ['from', '(unsigned) route.route_count', '(unsigned) route.route_back_count']
+    on_neighbor_info:
+      - logger.log:
+          format: "NeighborInfo !%08x: %u neighbors"
+          args: ['from', '(unsigned) info.neighbors_count']
 
 # Local status entities (this node / whole-mesh aggregates), surfaced to Home Assistant.
 sensor:

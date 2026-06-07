@@ -76,6 +76,9 @@ void Meshtastic::setup() {
   this->set_interval(15000, [this]() { this->expire_pending_dms_(); });
   this->set_interval(500, [this]() { this->service_retransmits_(); });
 
+  if (this->neighbor_info_interval_ > 0)
+    this->set_interval(this->neighbor_info_interval_, [this]() { this->send_neighbor_info(); });
+
 #ifdef USE_TEXT_SENSOR
   if (this->node_id_text_sensor_ != nullptr)
     this->node_id_text_sensor_->publish_state(str_snprintf("!%08x", 9, this->node_num_));
@@ -372,6 +375,16 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
                  i < rd.snr_back_count ? rd.snr_back[i] / 4.0f : NAN);
       for (auto *t : this->on_traceroute_response_triggers_)
         t->trigger(h.from, channel_name, rd, rssi, snr);
+    }
+  }
+
+  if (data.portnum == meshtastic_PortNum_NEIGHBORINFO_APP && h.from != 0 && h.from != this->node_num_) {
+    meshtastic_NeighborInfo ni = meshtastic_NeighborInfo_init_zero;
+    pb_istream_t ns = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+    if (pb_decode(&ns, meshtastic_NeighborInfo_fields, &ni)) {
+      ESP_LOGD(TAG, "  neighborinfo !%08x (%u neighbors)", h.from, (unsigned) ni.neighbors_count);
+      for (auto *t : this->on_neighbor_info_triggers_)
+        t->trigger(h.from, channel_name, ni, rssi, snr);
     }
   }
 
@@ -996,6 +1009,33 @@ void Meshtastic::send_node_info() {
     return;
   ESP_LOGD(TAG, "Broadcasting NodeInfo");
   this->send_our_node_info_(MESHTASTIC_BROADCAST_ADDR, 0, false);
+}
+
+void Meshtastic::send_neighbor_info() {
+  if (this->channels_.empty())
+    return;
+  meshtastic_NeighborInfo ni = meshtastic_NeighborInfo_init_zero;
+  ni.node_id = this->node_num_;
+  ni.node_broadcast_interval_secs = this->neighbor_info_interval_ / 1000;
+  const pb_size_t cap = (pb_size_t) (sizeof(ni.neighbors) / sizeof(ni.neighbors[0]));
+  for (const auto &nd : this->nodedb_.nodes()) {
+    if (!(nd.has_hops_away && nd.hops_away == 0))
+      continue;
+    if (ni.neighbors_count >= cap)
+      break;
+    meshtastic_Neighbor &n = ni.neighbors[ni.neighbors_count++];
+    n = meshtastic_Neighbor_init_zero;
+    n.node_id = nd.num;
+    n.snr = nd.snr;
+  }
+  uint8_t buf[meshtastic_NeighborInfo_size];
+  pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
+  if (!pb_encode(&os, meshtastic_NeighborInfo_fields, &ni)) {
+    ESP_LOGW(TAG, "NeighborInfo encode failed");
+    return;
+  }
+  ESP_LOGD(TAG, "Broadcasting NeighborInfo (%u neighbors)", (unsigned) ni.neighbors_count);
+  this->send_data_(meshtastic_PortNum_NEIGHBORINFO_APP, buf, os.bytes_written, MESHTASTIC_BROADCAST_ADDR, 0, false);
 }
 
 void Meshtastic::send_traceroute(uint32_t dest, const std::string &channel, bool want_ack) {

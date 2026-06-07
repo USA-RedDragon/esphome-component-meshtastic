@@ -39,6 +39,8 @@ CONF_ON_POWER_METRICS = "on_power_metrics"
 CONF_ON_LOCAL_STATS = "on_local_stats"
 CONF_ON_HEALTH_METRICS = "on_health_metrics"
 CONF_ON_TRACEROUTE_RESPONSE = "on_traceroute_response"
+CONF_ON_NEIGHBOR_INFO = "on_neighbor_info"
+CONF_NEIGHBOR_INFO_INTERVAL = "neighbor_info_interval"
 CONF_TEXT = "text"
 CONF_CHANNEL = "channel"
 CONF_TO = "to"
@@ -95,6 +97,16 @@ def validate_node_info_interval(value):
         raise cv.Invalid("node_info_interval must be at least 1h (Meshtastic minimum)")
     return value
 
+
+MIN_NEIGHBOR_INFO_INTERVAL_MS = 4 * 60 * 60 * 1000
+
+
+def validate_neighbor_info_interval(value):
+    value = cv.positive_time_period_milliseconds(value)
+    if value.total_milliseconds < MIN_NEIGHBOR_INFO_INTERVAL_MS:
+        raise cv.Invalid("neighbor_info_interval must be at least 4h (Meshtastic minimum)")
+    return value
+
 # Meshtastic's well-known default channel key ("AQ==" index 1 expands to this).
 DEFAULT_PSK = list(base64.b64decode("1PG7OiApB1nwvP+rz05pAQ=="))
 
@@ -111,6 +123,7 @@ meshtastic_PowerMetrics = cg.global_ns.struct("meshtastic_PowerMetrics")
 meshtastic_LocalStats = cg.global_ns.struct("meshtastic_LocalStats")
 meshtastic_HealthMetrics = cg.global_ns.struct("meshtastic_HealthMetrics")
 meshtastic_RouteDiscovery = cg.global_ns.struct("meshtastic_RouteDiscovery")
+meshtastic_NeighborInfo = cg.global_ns.struct("meshtastic_NeighborInfo")
 
 PacketTrigger = meshtastic_ns.class_(
     "PacketTrigger",
@@ -157,6 +170,10 @@ HealthTrigger = meshtastic_ns.class_(
 TraceRouteResponseTrigger = meshtastic_ns.class_(
     "TraceRouteResponseTrigger",
     automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_RouteDiscovery, cg.float_, cg.float_),
+)
+NeighborInfoTrigger = meshtastic_ns.class_(
+    "NeighborInfoTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_NeighborInfo, cg.float_, cg.float_),
 )
 SendTextAction = meshtastic_ns.class_("SendTextAction", automation.Action)
 SendPositionAction = meshtastic_ns.class_("SendPositionAction", automation.Action)
@@ -450,6 +467,10 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_ON_TRACEROUTE_RESPONSE): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(TraceRouteResponseTrigger)}
         ),
+        cv.Optional(CONF_ON_NEIGHBOR_INFO): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(NeighborInfoTrigger)}
+        ),
+        cv.Optional(CONF_NEIGHBOR_INFO_INTERVAL): validate_neighbor_info_interval,  # omit to disable
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
 ).extend(cv.COMPONENT_SCHEMA)
@@ -474,6 +495,8 @@ async def to_code(config):
     cg.add(var.set_role(config[CONF_ROLE]))
     cg.add(var.set_hop_limit(config[CONF_HOP_LIMIT]))
     cg.add(var.set_node_info_interval(config[CONF_NODE_INFO_INTERVAL]))
+    if CONF_NEIGHBOR_INFO_INTERVAL in config:
+        cg.add(var.set_neighbor_info_interval(config[CONF_NEIGHBOR_INFO_INTERVAL]))
     cg.add(var.set_hw_model(config[CONF_HW_MODEL]))
     node_db_size = config[CONF_NODE_DB_SIZE] if CONF_NODE_DB_SIZE in config else default_node_db_size()
     cg.add(var.set_node_db_size(node_db_size))
@@ -578,6 +601,20 @@ async def to_code(config):
                 (cg.uint32, "from"),
                 (cg.std_string, "channel"),
                 (meshtastic_RouteDiscovery, "route"),
+                (cg.float_, "rssi"),
+                (cg.float_, "snr"),
+            ],
+            conf,
+        )
+
+    for conf in config.get(CONF_ON_NEIGHBOR_INFO, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        await automation.build_automation(
+            trigger,
+            [
+                (cg.uint32, "from"),
+                (cg.std_string, "channel"),
+                (meshtastic_NeighborInfo, "info"),
                 (cg.float_, "rssi"),
                 (cg.float_, "snr"),
             ],

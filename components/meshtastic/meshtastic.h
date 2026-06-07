@@ -50,6 +50,7 @@ class Meshtastic : public Component
   void set_role(uint32_t role) { this->role_ = role; }
   void set_hop_limit(uint8_t hop_limit) { this->hop_limit_ = hop_limit; }
   void set_node_info_interval(uint32_t interval_ms) { this->node_info_interval_ = interval_ms; }
+  void set_neighbor_info_interval(uint32_t interval_ms) { this->neighbor_info_interval_ = interval_ms; }
   void set_hw_model(uint32_t hw_model) { this->hw_model_ = hw_model; }
   void set_node_db_size(uint32_t size) { this->nodedb_.set_max_nodes(size); }
   void add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink);
@@ -88,6 +89,7 @@ class Meshtastic : public Component
   using OnLocalStatsTrigger = Trigger<uint32_t, std::string, meshtastic_LocalStats, float, float>;
   using OnHealthTrigger = Trigger<uint32_t, std::string, meshtastic_HealthMetrics, float, float>;
   using OnTraceRouteResponseTrigger = Trigger<uint32_t, std::string, meshtastic_RouteDiscovery, float, float>;
+  using OnNeighborInfoTrigger = Trigger<uint32_t, std::string, meshtastic_NeighborInfo, float, float>;
   void add_on_packet_trigger(OnPacketTrigger *t) { this->on_packet_triggers_.push_back(t); }
   void add_on_text_trigger(OnTextTrigger *t) { this->on_text_triggers_.push_back(t); }
   void add_on_nodeinfo_trigger(OnNodeInfoTrigger *t) { this->on_nodeinfo_triggers_.push_back(t); }
@@ -101,6 +103,7 @@ class Meshtastic : public Component
   void add_on_traceroute_response_trigger(OnTraceRouteResponseTrigger *t) {
     this->on_traceroute_response_triggers_.push_back(t);
   }
+  void add_on_neighbor_info_trigger(OnNeighborInfoTrigger *t) { this->on_neighbor_info_triggers_.push_back(t); }
 
   void send_text(const std::string &text, uint32_t dest, const std::string &channel, bool want_ack);
 
@@ -109,6 +112,7 @@ class Meshtastic : public Component
   void send_device_metrics(const meshtastic_DeviceMetrics &metrics, const std::string &channel, bool want_ack);
   void send_environment_metrics(const meshtastic_EnvironmentMetrics &metrics, const std::string &channel, bool want_ack);
   void send_node_info();
+  void send_neighbor_info();
   void send_traceroute(uint32_t dest, const std::string &channel, bool want_ack);
 
   void handle_rx(const std::vector<uint8_t> &packet, float rssi, float snr);
@@ -150,6 +154,7 @@ class Meshtastic : public Component
   uint32_t role_{0};  // meshtastic_Config_DeviceConfig_Role_CLIENT
   uint8_t hop_limit_{3};
   uint32_t node_info_interval_{10800000};  // 3 hours
+  uint32_t neighbor_info_interval_{0};     // 0 = disabled
   uint32_t hw_model_{39};  // meshtastic_HardwareModel_DIY_V1
   uint8_t private_key_[32]{};
   uint8_t public_key_[32]{};
@@ -195,6 +200,7 @@ class Meshtastic : public Component
   std::vector<OnLocalStatsTrigger *> on_local_stats_triggers_;
   std::vector<OnHealthTrigger *> on_health_triggers_;
   std::vector<OnTraceRouteResponseTrigger *> on_traceroute_response_triggers_;
+  std::vector<OnNeighborInfoTrigger *> on_neighbor_info_triggers_;
 
   // Lifetime diagnostic counters (surfaced via the sensor platform).
   uint32_t rx_packets_{0};
