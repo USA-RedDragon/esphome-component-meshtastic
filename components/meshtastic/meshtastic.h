@@ -54,6 +54,7 @@ class Meshtastic : public Component
   void set_neighbor_info_interval(uint32_t interval_ms) { this->neighbor_info_interval_ = interval_ms; }
   void set_hw_model(uint32_t hw_model) { this->hw_model_ = hw_model; }
   void set_node_db_size(uint32_t size) { this->nodedb_.set_max_nodes(size); }
+  void set_request_unknown_node_info(bool enable) { this->request_unknown_node_info_ = enable; }
   void add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink);
 
 #ifdef USE_SX126X
@@ -146,6 +147,7 @@ class Meshtastic : public Component
                 uint32_t request_id);
   void send_our_node_info_(uint32_t dest, size_t channel_idx, bool want_response);
   void request_node_info_(uint32_t dest);
+  void maybe_request_node_info_(uint32_t node);  // rate-limited; only when request_unknown_node_info_ is set
   void queue_pending_dm_(uint32_t dest, const std::string &text, bool want_ack);
   void queue_pending_rx_(uint32_t from, const std::vector<uint8_t> &packet, float rssi, float snr);
   void flush_pending_dms_(uint32_t learned_node);
@@ -192,6 +194,9 @@ class Meshtastic : public Component
   std::vector<Channel> channels_;
   PacketDedup dedup_;
   NodeDb nodedb_;
+  bool request_unknown_node_info_{false};
+  std::map<uint32_t, uint32_t> nodeinfo_requested_at_;
+  uint32_t last_nodeinfo_request_ms_{0};
   std::vector<OnPacketTrigger *> on_packet_triggers_;
   std::vector<OnTextTrigger *> on_text_triggers_;
   std::vector<OnNodeInfoTrigger *> on_nodeinfo_triggers_;

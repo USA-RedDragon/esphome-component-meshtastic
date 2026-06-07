@@ -86,6 +86,7 @@ meshtastic:
     # neighbor_info_interval: 4h  # >=4h; if set, periodically advertise our 0-hop neighbors
     hw_model: DIY_V1          # any HardwareModel
     node_db_size: 100         # optional; per-platform default; 0 disables the node DB
+    request_unknown_node_info: false  # if true, ask heard-but-unknown peers for their NodeInfo (rate-limited)
     channels:
       # psk: 'default' | 'none' | index 0-255 | base64 (1/16/32 bytes) | hex (32/64 chars)
       - name: LongFast

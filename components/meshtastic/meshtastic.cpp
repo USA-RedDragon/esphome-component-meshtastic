@@ -181,6 +181,10 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
     node->hops_away = (h.hop_start >= h.hop_limit) ? (h.hop_start - h.hop_limit) : 0;
   }
 
+  if (this->request_unknown_node_info_ && node != nullptr && !node->has_user && h.from != this->node_num_ &&
+      data.portnum != meshtastic_PortNum_NODEINFO_APP)
+    this->maybe_request_node_info_(h.from);
+
   if (data.portnum == meshtastic_PortNum_NODEINFO_APP && h.from != 0 && h.from != this->node_num_) {
     meshtastic_User user = meshtastic_User_init_zero;
     pb_istream_t us = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
@@ -866,6 +870,26 @@ void Meshtastic::send_our_node_info_(uint32_t dest, size_t channel_idx, bool wan
 void Meshtastic::request_node_info_(uint32_t dest) {
   ESP_LOGD(TAG, "Requesting NodeInfo from !%08x", dest);
   this->send_our_node_info_(dest, 0, true);
+}
+
+// Rate-limit auto NodeInfo requests so we stay a good mesh citizen: a per-node cooldown plus a global
+// minimum spacing between any two requests.
+static const uint32_t NI_REQUEST_COOLDOWN_MS = 15 * 60 * 1000;
+static const uint32_t NI_REQUEST_SPACING_MS = 5000;
+static const size_t NI_REQUEST_MAP_CAP = 64;
+
+void Meshtastic::maybe_request_node_info_(uint32_t node) {
+  const uint32_t now = millis();
+  if (this->last_nodeinfo_request_ms_ != 0 && now - this->last_nodeinfo_request_ms_ < NI_REQUEST_SPACING_MS)
+    return;
+  auto it = this->nodeinfo_requested_at_.find(node);
+  if (it != this->nodeinfo_requested_at_.end() && now - it->second < NI_REQUEST_COOLDOWN_MS)
+    return;
+  if (this->nodeinfo_requested_at_.size() >= NI_REQUEST_MAP_CAP)
+    this->nodeinfo_requested_at_.clear();
+  this->nodeinfo_requested_at_[node] = now;
+  this->last_nodeinfo_request_ms_ = now;
+  this->request_node_info_(node);
 }
 
 static const size_t MAX_PENDING_DMS = 8;
