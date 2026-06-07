@@ -62,7 +62,7 @@ inline void serialize_header(const PacketHeader &h, uint8_t out[MESHTASTIC_HEADE
   write_u32_le(out + 4, h.from);
   write_u32_le(out + 8, h.id);
   out[12] = (uint8_t) ((h.hop_limit & 0x07) | (h.want_ack ? 0x08 : 0) | (h.via_mqtt ? 0x10 : 0) |
-                      ((h.hop_start & 0x07) << 5));
+                       ((h.hop_start & 0x07) << 5));
   out[13] = h.channel;
   out[14] = h.next_hop;
   out[15] = h.relay_node;

@@ -28,8 +28,8 @@ meshtastic_NodeInfoLite *NodeDb::get_or_create(uint32_t num, bool *is_new) {
   meshtastic_NodeInfoLite fresh = meshtastic_NodeInfoLite_init_zero;
   fresh.num = num;
 
-  const bool room = this->nodes_.size() < this->max_nodes_ &&
-                    RAMAllocator<uint8_t>().get_free_heap_size() > MIN_FREE_HEAP_TO_GROW;
+  const bool room =
+      this->nodes_.size() < this->max_nodes_ && RAMAllocator<uint8_t>().get_free_heap_size() > MIN_FREE_HEAP_TO_GROW;
   if (!room && !this->nodes_.empty()) {
     // Full (count cap reached or heap low): evict the least-recently-heard node, reuse its slot.
     size_t oldest = 0;

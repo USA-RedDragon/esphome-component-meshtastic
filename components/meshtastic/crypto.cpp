@@ -115,14 +115,14 @@ void sha256_hash(const uint8_t *data, size_t len, uint8_t out[32]) {
 #endif
 }
 
-bool aes_ccm_encrypt(const uint8_t key[32], const uint8_t *nonce, size_t nonce_len, const uint8_t *plain,
-                     size_t len, uint8_t *cipher_out, uint8_t *tag_out, size_t tag_len) {
+bool aes_ccm_encrypt(const uint8_t key[32], const uint8_t *nonce, size_t nonce_len, const uint8_t *plain, size_t len,
+                     uint8_t *cipher_out, uint8_t *tag_out, size_t tag_len) {
 #ifdef MESHTASTIC_PKC_MBEDTLS
   mbedtls_ccm_context ctx;
   mbedtls_ccm_init(&ctx);
-  bool ok = mbedtls_ccm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, key, 256) == 0 &&
-            mbedtls_ccm_encrypt_and_tag(&ctx, len, nonce, nonce_len, nullptr, 0, plain, cipher_out, tag_out,
-                                        tag_len) == 0;
+  bool ok =
+      mbedtls_ccm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, key, 256) == 0 &&
+      mbedtls_ccm_encrypt_and_tag(&ctx, len, nonce, nonce_len, nullptr, 0, plain, cipher_out, tag_out, tag_len) == 0;
   mbedtls_ccm_free(&ctx);
   return ok;
 #else  // BearSSL: CCM needs a CTR+CBC-MAC block cipher (ctrcbc), run is in place.
@@ -141,8 +141,8 @@ bool aes_ccm_encrypt(const uint8_t key[32], const uint8_t *nonce, size_t nonce_l
 #endif
 }
 
-bool aes_ccm_decrypt(const uint8_t key[32], const uint8_t *nonce, size_t nonce_len, const uint8_t *cipher,
-                     size_t len, const uint8_t *tag, size_t tag_len, uint8_t *plain_out) {
+bool aes_ccm_decrypt(const uint8_t key[32], const uint8_t *nonce, size_t nonce_len, const uint8_t *cipher, size_t len,
+                     const uint8_t *tag, size_t tag_len, uint8_t *plain_out) {
 #ifdef MESHTASTIC_PKC_MBEDTLS
   mbedtls_ccm_context ctx;
   mbedtls_ccm_init(&ctx);

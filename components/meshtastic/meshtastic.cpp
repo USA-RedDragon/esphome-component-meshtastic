@@ -222,8 +222,7 @@ void Meshtastic::publish_stats_() {
 
 void Meshtastic::dump_config() {
   ESP_LOGCONFIG(TAG, "Meshtastic:");
-  ESP_LOGCONFIG(TAG, "  Node: !%08x \"%s\" (%s)", this->node_num_, this->long_name_.c_str(),
-                this->short_name_.c_str());
+  ESP_LOGCONFIG(TAG, "  Node: !%08x \"%s\" (%s)", this->node_num_, this->long_name_.c_str(), this->short_name_.c_str());
   ESP_LOGCONFIG(TAG, "  Role: %s  Hop limit: %u", role_name(this->role_), this->hop_limit_);
   if (role_is_deprecated(this->role_))
     ESP_LOGW(TAG, "Configured role '%s' is deprecated", role_name(this->role_));
@@ -237,8 +236,9 @@ void Meshtastic::dump_config() {
   if (this->channels_.empty())
     ESP_LOGW(TAG, "No channels configured; received packets cannot be decoded");
   ESP_LOGCONFIG(TAG, "  PKC (direct messages): %s",
-                this->has_keypair_ ? (this->private_key_configured_ ? "ready (configured key)" : "ready (generated key)")
-                                   : "key derivation FAILED");
+                this->has_keypair_
+                    ? (this->private_key_configured_ ? "ready (configured key)" : "ready (generated key)")
+                    : "key derivation FAILED");
 #ifdef USE_SX126X
   if (this->sx126x_ != nullptr)
     ESP_LOGCONFIG(TAG, "  Radio: SX126x");
@@ -444,8 +444,7 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
       if (routing.error_reason == meshtastic_Routing_Error_NONE)
         ESP_LOGD(TAG, "  ACK from !%08x for id=0x%08x", h.from, data.request_id);
       else
-        ESP_LOGD(TAG, "  NAK from !%08x for id=0x%08x error=%d", h.from, data.request_id,
-                 (int) routing.error_reason);
+        ESP_LOGD(TAG, "  NAK from !%08x for id=0x%08x error=%d", h.from, data.request_id, (int) routing.error_reason);
       this->clear_outstanding_(data.request_id);
     }
   }
@@ -541,8 +540,8 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
     ESP_LOGW(TAG, "Dropping runt packet: %zu bytes", packet.size());
     return;
   }
-  ESP_LOGD(TAG, "RX %zuB rssi=%.0f snr=%.1f from=!%08x to=!%08x id=0x%08x ch=0x%02x hop=%u/%u%s%s", packet.size(),
-           rssi, snr, h.from, h.to, h.id, h.channel, h.hop_limit, h.hop_start, h.want_ack ? " ack" : "",
+  ESP_LOGD(TAG, "RX %zuB rssi=%.0f snr=%.1f from=!%08x to=!%08x id=0x%08x ch=0x%02x hop=%u/%u%s%s", packet.size(), rssi,
+           snr, h.from, h.to, h.id, h.channel, h.hop_limit, h.hop_start, h.want_ack ? " ack" : "",
            h.via_mqtt ? " mqtt" : "");
   this->rx_packets_++;
   this->last_rx_ms_ = millis();
@@ -653,8 +652,8 @@ void Meshtastic::maybe_relay_(const std::vector<uint8_t> &packet, const PacketHe
 
 void Meshtastic::relay_traceroute_(const PacketHeader &h, const meshtastic_Data &data_in, size_t channel_idx,
                                    float snr) {
-  if (h.from == this->node_num_ || h.to == this->node_num_ || h.hop_limit == 0 ||
-      !role_rebroadcasts(this->role_) || channel_idx >= this->channels_.size())
+  if (h.from == this->node_num_ || h.to == this->node_num_ || h.hop_limit == 0 || !role_rebroadcasts(this->role_) ||
+      channel_idx >= this->channels_.size())
     return;
 
   // Insert ourselves into the RouteDiscovery. Firmware: request_id==0 => travelling towards the destination
@@ -856,7 +855,8 @@ void Meshtastic::send_text(const std::string &text, uint32_t dest, const std::st
   if (dest != MESHTASTIC_BROADCAST_ADDR && dest != 0 && this->has_keypair_) {
     meshtastic_NodeInfoLite *peer = this->nodedb_.find(dest);
     if (peer != nullptr && peer->has_user && peer->user.public_key.size == 32) {
-      this->send_dm_(dest, meshtastic_PortNum_TEXT_MESSAGE_APP, (const uint8_t *) text.data(), text.size(), want_ack, 0);
+      this->send_dm_(dest, meshtastic_PortNum_TEXT_MESSAGE_APP, (const uint8_t *) text.data(), text.size(), want_ack,
+                     0);
     } else {
       this->queue_pending_dm_(dest, text, want_ack);
       this->request_node_info_(dest);
@@ -868,7 +868,8 @@ void Meshtastic::send_text(const std::string &text, uint32_t dest, const std::st
     ESP_LOGW(TAG, "send_text: unknown channel \"%s\"", channel.c_str());
     return;
   }
-  this->send_data_(meshtastic_PortNum_TEXT_MESSAGE_APP, (const uint8_t *) text.data(), text.size(), dest, idx, want_ack);
+  this->send_data_(meshtastic_PortNum_TEXT_MESSAGE_APP, (const uint8_t *) text.data(), text.size(), dest, idx,
+                   want_ack);
 }
 
 // Meshtastic PKC nonce (13 bytes): packet id (4 LE) | extra nonce (4 LE) | from-node (4 LE) | 0.
@@ -1080,8 +1081,7 @@ void Meshtastic::expire_pending_dms_() {
   for (size_t i = 0; i < this->pending_dms_.size();) {
     if (now - this->pending_dms_[i].queued_at > TIMEOUT_MS) {
       ESP_LOGW(TAG, "Dropping queued DM %s !%08x (no public key after %us)",
-               this->pending_dms_[i].is_rx ? "from" : "to", this->pending_dms_[i].peer,
-               (unsigned) (TIMEOUT_MS / 1000));
+               this->pending_dms_[i].is_rx ? "from" : "to", this->pending_dms_[i].peer, (unsigned) (TIMEOUT_MS / 1000));
       this->pending_dms_.erase(this->pending_dms_.begin() + i);
     } else {
       i++;
@@ -1229,7 +1229,7 @@ void Meshtastic::udp_setup_() {
   int reuse = 1;
   this->udp_socket_->setsockopt(SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
   this->udp_socket_->setblocking(false);
-  struct sockaddr_in bind_addr {};
+  struct sockaddr_in bind_addr{};
   bind_addr.sin_family = AF_INET;
   bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
   bind_addr.sin_port = htons(this->udp_port_);
@@ -1238,7 +1238,7 @@ void Meshtastic::udp_setup_() {
     this->udp_socket_ = nullptr;
     return;
   }
-  struct ip_mreq mreq {};
+  struct ip_mreq mreq{};
   mreq.imr_multiaddr.s_addr = inet_addr(this->udp_address_.c_str());
   mreq.imr_interface.s_addr = htonl(INADDR_ANY);
   if (this->udp_socket_->setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) != 0)
@@ -1274,7 +1274,7 @@ void Meshtastic::udp_broadcast_(const std::vector<uint8_t> &frame) {
   pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
   if (!pb_encode(&os, meshtastic_MeshPacket_fields, &mp))
     return;
-  struct sockaddr_in dest {};
+  struct sockaddr_in dest{};
   dest.sin_family = AF_INET;
   dest.sin_addr.s_addr = inet_addr(this->udp_address_.c_str());
   dest.sin_port = htons(this->udp_port_);
@@ -1296,7 +1296,7 @@ void Meshtastic::loop() {
   }
   uint8_t buf[meshtastic_MeshPacket_size];
   while (this->udp_socket_->ready()) {
-    struct sockaddr_storage src {};
+    struct sockaddr_storage src{};
     socklen_t srclen = sizeof(src);
     ssize_t n = this->udp_socket_->recvfrom(buf, sizeof(buf), (struct sockaddr *) &src, &srclen);
     if (n <= 0)

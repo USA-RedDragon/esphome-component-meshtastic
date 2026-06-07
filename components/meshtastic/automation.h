@@ -119,9 +119,9 @@ template<typename... Ts> class SendPositionAction : public Action<Ts...> {
   TEMPLATABLE_VALUE(bool, want_ack)
 
   void play(const Ts &...x) override {
-    this->parent_->send_position(this->latitude_.value(x...), this->longitude_.value(x...),
-                                 this->altitude_.value(x...), this->precision_bits_.value(x...),
-                                 this->channel_.value(x...), this->want_ack_.value(x...));
+    this->parent_->send_position(this->latitude_.value(x...), this->longitude_.value(x...), this->altitude_.value(x...),
+                                 this->precision_bits_.value(x...), this->channel_.value(x...),
+                                 this->want_ack_.value(x...));
   }
 
  protected:
@@ -169,7 +169,8 @@ template<typename... Ts> class SendTelemetryAction : public Action<Ts...> {
   Meshtastic *parent_;
 };
 
-// meshtastic.send_environment_metrics: EnvironmentMetrics. Each field is sent only if provided (templatable from any sensor).
+// meshtastic.send_environment_metrics: EnvironmentMetrics. Each field is sent only if provided (templatable from any
+// sensor).
 template<typename... Ts> class SendEnvironmentMetricsAction : public Action<Ts...> {
  public:
   explicit SendEnvironmentMetricsAction(Meshtastic *parent) : parent_(parent) {}

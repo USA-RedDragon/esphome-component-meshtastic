@@ -114,6 +114,7 @@ def validate_neighbor_info_interval(value):
         raise cv.Invalid("neighbor_info_interval must be at least 4h (Meshtastic minimum)")
     return value
 
+
 # Meshtastic's well-known default channel key ("AQ==" index 1 expands to this).
 DEFAULT_PSK = list(base64.b64decode("1PG7OiApB1nwvP+rz05pAQ=="))
 
@@ -443,9 +444,7 @@ UDP_SCHEMA = cv.Schema(
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(Meshtastic),
-        cv.Required(CONF_RADIO): cv.Any(
-            cv.use_id(sx126x.SX126x), cv.use_id(sx127x.SX127x)
-        ),
+        cv.Required(CONF_RADIO): cv.Any(cv.use_id(sx126x.SX126x), cv.use_id(sx127x.SX127x)),
         cv.Optional(CONF_LONG_NAME): cv.All(cv.string, cv.Length(max=40)),
         cv.Optional(CONF_SHORT_NAME): cv.All(cv.string, cv.Length(max=4)),
         cv.Optional(CONF_NODE_NUM): cv.hex_uint32_t,

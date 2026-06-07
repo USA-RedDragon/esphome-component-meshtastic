@@ -20,10 +20,10 @@ void sha256_hash(const uint8_t *data, size_t len, uint8_t out[32]);
 
 // AES-256-CCM (Meshtastic PKC uses nonce_len=13, tag_len=8; no AAD). false on failure;
 // decrypt additionally returns false on authentication-tag mismatch.
-bool aes_ccm_encrypt(const uint8_t key[32], const uint8_t *nonce, size_t nonce_len, const uint8_t *plain,
-                     size_t len, uint8_t *cipher_out, uint8_t *tag_out, size_t tag_len);
-bool aes_ccm_decrypt(const uint8_t key[32], const uint8_t *nonce, size_t nonce_len, const uint8_t *cipher,
-                     size_t len, const uint8_t *tag, size_t tag_len, uint8_t *plain_out);
+bool aes_ccm_encrypt(const uint8_t key[32], const uint8_t *nonce, size_t nonce_len, const uint8_t *plain, size_t len,
+                     uint8_t *cipher_out, uint8_t *tag_out, size_t tag_len);
+bool aes_ccm_decrypt(const uint8_t key[32], const uint8_t *nonce, size_t nonce_len, const uint8_t *cipher, size_t len,
+                     const uint8_t *tag, size_t tag_len, uint8_t *plain_out);
 
 }  // namespace meshtastic
 }  // namespace esphome

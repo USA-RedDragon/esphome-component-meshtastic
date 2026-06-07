@@ -128,7 +128,8 @@ class Meshtastic : public Component
   void send_position(double latitude, double longitude, int32_t altitude, uint32_t precision_bits,
                      const std::string &channel, bool want_ack);
   void send_device_metrics(const meshtastic_DeviceMetrics &metrics, const std::string &channel, bool want_ack);
-  void send_environment_metrics(const meshtastic_EnvironmentMetrics &metrics, const std::string &channel, bool want_ack);
+  void send_environment_metrics(const meshtastic_EnvironmentMetrics &metrics, const std::string &channel,
+                                bool want_ack);
   void send_node_info();
   void send_neighbor_info();
   void send_traceroute(uint32_t dest, const std::string &channel, bool want_ack);
@@ -184,7 +185,7 @@ class Meshtastic : public Component
   uint8_t hop_limit_{3};
   uint32_t node_info_interval_{10800000};  // 3 hours
   uint32_t neighbor_info_interval_{0};     // 0 = disabled
-  uint32_t hw_model_{39};  // meshtastic_HardwareModel_DIY_V1
+  uint32_t hw_model_{39};                  // meshtastic_HardwareModel_DIY_V1
   uint8_t private_key_[32]{};
   uint8_t public_key_[32]{};
   bool has_keypair_{false};
