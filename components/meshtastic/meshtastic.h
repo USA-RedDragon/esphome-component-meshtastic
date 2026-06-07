@@ -55,6 +55,7 @@ class Meshtastic : public Component
   void set_hw_model(uint32_t hw_model) { this->hw_model_ = hw_model; }
   void set_node_db_size(uint32_t size) { this->nodedb_.set_max_nodes(size); }
   void set_request_unknown_node_info(bool enable) { this->request_unknown_node_info_ = enable; }
+  void set_persist_node_db(bool enable) { this->persist_node_db_ = enable; }
   void add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink);
 
 #ifdef USE_SX126X
@@ -198,6 +199,7 @@ class Meshtastic : public Component
   PacketDedup dedup_;
   NodeDb nodedb_;
   bool request_unknown_node_info_{false};
+  bool persist_node_db_{true};
   std::map<uint32_t, uint32_t> nodeinfo_requested_at_;
   uint32_t last_nodeinfo_request_ms_{0};
   std::vector<OnPacketTrigger *> on_packet_triggers_;

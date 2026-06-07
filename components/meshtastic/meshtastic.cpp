@@ -75,7 +75,7 @@ void Meshtastic::init_keypair_() {
 static inline uint32_t nodedb_pref_base_(uint32_t node_num) { return fnv1_hash("meshtastic_nodedb") ^ node_num; }
 
 void Meshtastic::load_nodedb_() {
-  if (!this->nodedb_.enabled())
+  if (!this->nodedb_.enabled() || !this->persist_node_db_)
     return;
   const uint32_t base = nodedb_pref_base_(this->node_num_);
   uint32_t count = 0;
@@ -114,7 +114,7 @@ void Meshtastic::load_nodedb_() {
 }
 
 void Meshtastic::save_nodedb_() {
-  if (!this->nodedb_.enabled())
+  if (!this->nodedb_.enabled() || !this->persist_node_db_)
     return;
   const uint32_t base = nodedb_pref_base_(this->node_num_);
   const uint32_t cap = (uint32_t) this->nodedb_.max_nodes();
@@ -156,13 +156,15 @@ void Meshtastic::setup() {
     this->long_name_ = "Meshtastic " + this->short_name_;
 
   this->init_keypair_();
-  this->load_nodedb_();
-  this->set_interval(600000, [this]() {
-    if (this->nodedb_dirty_) {
-      this->save_nodedb_();
-      this->nodedb_dirty_ = false;
-    }
-  });
+  if (this->persist_node_db_) {
+    this->load_nodedb_();
+    this->set_interval(600000, [this]() {
+      if (this->nodedb_dirty_) {
+        this->save_nodedb_();
+        this->nodedb_dirty_ = false;
+      }
+    });
+  }
 
   if (this->node_info_interval_ > 0) {
     this->defer([this]() { this->send_node_info(); });

@@ -29,6 +29,7 @@ CONF_NODE_INFO_INTERVAL = "node_info_interval"
 CONF_HW_MODEL = "hw_model"
 CONF_NODE_DB_SIZE = "node_db_size"
 CONF_REQUEST_UNKNOWN_NODE_INFO = "request_unknown_node_info"
+CONF_PERSIST_NODE_DB = "persist_node_db"
 CONF_ON_PACKET = "on_packet"
 CONF_ON_TEXT = "on_text"
 CONF_ON_NODEINFO = "on_nodeinfo"
@@ -442,6 +443,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_HW_MODEL, default="DIY_V1"): cv.enum(_enums.HARDWARE_MODELS, upper=True),
         cv.Optional(CONF_NODE_DB_SIZE): cv.int_range(min=0, max=500),  # 0 disables the node DB
         cv.Optional(CONF_REQUEST_UNKNOWN_NODE_INFO, default=False): cv.boolean,
+        cv.Optional(CONF_PERSIST_NODE_DB, default=True): cv.boolean,
         cv.Optional(CONF_ON_PACKET): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(PacketTrigger)}
         ),
@@ -512,6 +514,7 @@ async def to_code(config):
     node_db_size = config[CONF_NODE_DB_SIZE] if CONF_NODE_DB_SIZE in config else default_node_db_size()
     cg.add(var.set_node_db_size(node_db_size))
     cg.add(var.set_request_unknown_node_info(config[CONF_REQUEST_UNKNOWN_NODE_INFO]))
+    cg.add(var.set_persist_node_db(config[CONF_PERSIST_NODE_DB]))
 
     for ch in config.get(CONF_CHANNELS, []):
         cg.add(var.add_channel(ch[CONF_NAME], ch[CONF_PSK], ch[CONF_UPLINK], ch[CONF_DOWNLINK]))
