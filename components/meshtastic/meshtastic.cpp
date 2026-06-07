@@ -18,6 +18,26 @@ static const char *const TAG = "meshtastic";
 
 static const uint32_t NODE_ONLINE_WINDOW_MS = 2 * 60 * 60 * 1000;
 
+// Small persisted node DB so the whole blob fits a single NVS entry.
+// Only nodes we have a User (name/key) for are saved.
+static const size_t PERSIST_MAX_NODES = 32;
+struct PersistNode {
+  uint32_t num;
+  uint32_t hw_model;
+  uint32_t role;
+  int32_t latitude_i;
+  int32_t longitude_i;
+  uint8_t public_key[32];
+  uint8_t public_key_size;
+  bool has_position;
+  char long_name[40];
+  char short_name[5];
+};
+struct PersistedNodeDb {
+  uint32_t count;
+  PersistNode nodes[PERSIST_MAX_NODES];
+};
+
 void Meshtastic::add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink) {
   Channel ch;
   ch.name = name;
@@ -55,6 +75,68 @@ void Meshtastic::init_keypair_() {
   this->has_keypair_ = x25519_shared(this->private_key_, basepoint, this->public_key_);
 }
 
+void Meshtastic::load_nodedb_() {
+  if (!this->nodedb_.enabled())
+    return;
+  this->nodedb_pref_ =
+      global_preferences->make_preference<PersistedNodeDb>(fnv1_hash("meshtastic_nodedb") ^ this->node_num_);
+  PersistedNodeDb blob{};
+  if (!this->nodedb_pref_.load(&blob))
+    return;
+  const uint32_t now = millis();
+  uint32_t restored = 0;
+  for (uint32_t i = 0; i < blob.count && i < PERSIST_MAX_NODES; i++) {
+    const PersistNode &p = blob.nodes[i];
+    if (p.num == 0 || p.num == this->node_num_)
+      continue;
+    bool is_new = false;
+    meshtastic_NodeInfoLite *node = this->nodedb_.get_or_create(p.num, &is_new);
+    if (node == nullptr)
+      continue;
+    node->num = p.num;
+    node->last_heard = now;
+    node->has_user = true;
+    memcpy(node->user.long_name, p.long_name, sizeof(node->user.long_name));
+    memcpy(node->user.short_name, p.short_name, sizeof(node->user.short_name));
+    node->user.hw_model = (meshtastic_HardwareModel) p.hw_model;
+    node->user.role = (meshtastic_Config_DeviceConfig_Role) p.role;
+    node->user.public_key.size = p.public_key_size;
+    memcpy(node->user.public_key.bytes, p.public_key, sizeof(p.public_key));
+    if (p.has_position) {
+      node->has_position = true;
+      node->position.latitude_i = p.latitude_i;
+      node->position.longitude_i = p.longitude_i;
+    }
+    restored++;
+  }
+  ESP_LOGI(TAG, "Restored %u nodes from flash", (unsigned) restored);
+}
+
+void Meshtastic::save_nodedb_() {
+  if (!this->nodedb_.enabled())
+    return;
+  PersistedNodeDb blob{};
+  for (const auto &nd : this->nodedb_.nodes()) {
+    if (blob.count >= PERSIST_MAX_NODES)
+      break;
+    if (!nd.has_user)
+      continue;  // only persist nodes we have an identity for
+    PersistNode &p = blob.nodes[blob.count++];
+    p.num = nd.num;
+    p.hw_model = nd.user.hw_model;
+    p.role = nd.user.role;
+    p.has_position = nd.has_position;
+    p.latitude_i = nd.has_position ? nd.position.latitude_i : 0;
+    p.longitude_i = nd.has_position ? nd.position.longitude_i : 0;
+    p.public_key_size = nd.user.public_key.size;
+    memcpy(p.public_key, nd.user.public_key.bytes, sizeof(p.public_key));
+    memcpy(p.long_name, nd.user.long_name, sizeof(p.long_name));
+    memcpy(p.short_name, nd.user.short_name, sizeof(p.short_name));
+  }
+  this->nodedb_pref_.save(&blob);
+  ESP_LOGD(TAG, "Persisted %u nodes", (unsigned) blob.count);
+}
+
 void Meshtastic::setup() {
   if (this->node_num_ == 0) {
     uint8_t mac[6];
@@ -67,6 +149,13 @@ void Meshtastic::setup() {
     this->long_name_ = "Meshtastic " + this->short_name_;
 
   this->init_keypair_();
+  this->load_nodedb_();
+  this->set_interval(600000, [this]() {
+    if (this->nodedb_dirty_) {
+      this->save_nodedb_();
+      this->nodedb_dirty_ = false;
+    }
+  });
 
   if (this->node_info_interval_ > 0) {
     this->defer([this]() { this->send_node_info(); });
@@ -198,6 +287,7 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
         node->user.is_licensed = user.is_licensed;
         node->user.public_key.size = user.public_key.size;
         memcpy(node->user.public_key.bytes, user.public_key.bytes, user.public_key.size);
+        this->nodedb_dirty_ = true;
       }
       ESP_LOGD(TAG, "  node !%08x \"%s\" (%s) %s", h.from, user.long_name, user.short_name,
                node == nullptr ? "(db off)" : (node_is_new ? "NEW" : "updated"));
@@ -226,6 +316,8 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
         node->position.altitude = pos.altitude;
         node->position.time = pos.time;
         node->position.location_source = pos.location_source;
+        if (node->has_user)
+          this->nodedb_dirty_ = true;
       }
       const double lat = pos.latitude_i * 1e-7;
       const double lon = pos.longitude_i * 1e-7;

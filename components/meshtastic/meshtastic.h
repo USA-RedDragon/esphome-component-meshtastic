@@ -148,6 +148,8 @@ class Meshtastic : public Component
   void send_our_node_info_(uint32_t dest, size_t channel_idx, bool want_response);
   void request_node_info_(uint32_t dest);
   void maybe_request_node_info_(uint32_t node);  // rate-limited; only when request_unknown_node_info_ is set
+  void load_nodedb_();
+  void save_nodedb_();
   void queue_pending_dm_(uint32_t dest, const std::string &text, bool want_ack);
   void queue_pending_rx_(uint32_t from, const std::vector<uint8_t> &packet, float rssi, float snr);
   void flush_pending_dms_(uint32_t learned_node);
@@ -166,6 +168,8 @@ class Meshtastic : public Component
   bool has_keypair_{false};
   bool private_key_configured_{false};
   ESPPreferenceObject key_pref_;
+  ESPPreferenceObject nodedb_pref_;
+  bool nodedb_dirty_{false};
   meshtastic_Position self_position_{};
   bool has_self_position_{false};
   meshtastic_DeviceMetrics self_metrics_{};
