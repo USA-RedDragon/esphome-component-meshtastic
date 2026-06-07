@@ -247,6 +247,11 @@ void Meshtastic::dump_config() {
   if (this->sx127x_ != nullptr)
     ESP_LOGCONFIG(TAG, "  Radio: SX127x");
 #endif
+#ifdef USE_MESH_UDP
+  if (this->udp_enabled_)
+    ESP_LOGCONFIG(TAG, "  UDP bridge: %s:%u (%s)", this->udp_address_.c_str(), this->udp_port_,
+                  this->udp_socket_ != nullptr ? "active" : "pending network");
+#endif
 }
 
 #ifdef USE_SX126X
