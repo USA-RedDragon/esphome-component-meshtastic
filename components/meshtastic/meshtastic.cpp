@@ -74,6 +74,7 @@ void Meshtastic::setup() {
   }
 
   this->set_interval(15000, [this]() { this->expire_pending_dms_(); });
+  this->set_interval(500, [this]() { this->service_retransmits_(); });
 
 #ifdef USE_TEXT_SENSOR
   if (this->node_id_text_sensor_ != nullptr)
@@ -318,6 +319,21 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
     }
   }
 
+  // Routing: an ack (error NONE) or nak for one of our want_ack sends, correlated by request_id
+  if (data.portnum == meshtastic_PortNum_ROUTING_APP) {
+    meshtastic_Routing routing = meshtastic_Routing_init_zero;
+    pb_istream_t rstream = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+    if (pb_decode(&rstream, meshtastic_Routing_fields, &routing) &&
+        routing.which_variant == meshtastic_Routing_error_reason_tag) {
+      if (routing.error_reason == meshtastic_Routing_Error_NONE)
+        ESP_LOGD(TAG, "  ACK from !%08x for id=0x%08x", h.from, data.request_id);
+      else
+        ESP_LOGD(TAG, "  NAK from !%08x for id=0x%08x error=%d", h.from, data.request_id,
+                 (int) routing.error_reason);
+      this->clear_outstanding_(data.request_id);
+    }
+  }
+
   // Traceroute addressed to us: append our RX SNR (dB*4, int8) for the final hop and reply
   if (data.portnum == meshtastic_PortNum_TRACEROUTE_APP && data.want_response && h.to == this->node_num_ &&
       h.from != 0 && h.from != this->node_num_) {
@@ -365,6 +381,8 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
   if (this->dedup_.is_duplicate(h.from, h.id, millis())) {
     ESP_LOGV(TAG, "  duplicate, ignoring");
     this->dropped_duplicate_++;
+    if (h.from == this->node_num_)
+      this->clear_outstanding_(h.id);
     return;
   }
 
@@ -580,6 +598,8 @@ void Meshtastic::send_data_(uint32_t portnum, const uint8_t *payload, size_t pay
   this->dedup_.is_duplicate(this->node_num_, id, millis());  // remember our own packet
   ESP_LOGD(TAG, "TX portnum=%u to=!%08x id=0x%08x %uB", portnum, dest, id, (unsigned) packet.size());
   this->transmit_(packet);
+  if (want_ack)
+    this->track_want_ack_(id, packet);
 }
 
 void Meshtastic::send_ack_(uint32_t to, uint32_t request_id, size_t channel_idx) {
@@ -599,6 +619,54 @@ void Meshtastic::send_routing_error_(uint32_t to, uint32_t request_id, size_t ch
   }
   ESP_LOGD(TAG, "Routing to=!%08x for id=0x%08x error=%d", to, request_id, error);
   this->send_data_(meshtastic_PortNum_ROUTING_APP, buf, os.bytes_written, to, channel_idx, false, request_id);
+}
+
+// Reliable-delivery tuning. RETX_BASE_MS is approximate: exact time-on-air-based backoff needs the radio
+// modem getters that ESPHome's sx126x/sx127x don't expose yet (same blocker as channel/air utilization).
+static const uint32_t RETX_BASE_MS = 5000;
+static const uint8_t MAX_RETX = 3;
+static const size_t MAX_OUTSTANDING = 8;
+
+void Meshtastic::track_want_ack_(uint32_t id, const std::vector<uint8_t> &packet) {
+  if (this->outstanding_tx_.size() >= MAX_OUTSTANDING)
+    this->outstanding_tx_.erase(this->outstanding_tx_.begin());  // drop oldest
+  OutstandingTx o;
+  o.id = id;
+  o.packet = packet;
+  o.attempts = 0;
+  o.next_ms = millis() + RETX_BASE_MS;
+  this->outstanding_tx_.push_back(std::move(o));
+}
+
+void Meshtastic::clear_outstanding_(uint32_t id) {
+  for (size_t i = 0; i < this->outstanding_tx_.size(); i++) {
+    if (this->outstanding_tx_[i].id == id) {
+      ESP_LOGD(TAG, "want_ack id=0x%08x confirmed", id);
+      this->outstanding_tx_.erase(this->outstanding_tx_.begin() + i);
+      return;
+    }
+  }
+}
+
+void Meshtastic::service_retransmits_() {
+  const uint32_t now = millis();
+  for (size_t i = 0; i < this->outstanding_tx_.size();) {
+    OutstandingTx &o = this->outstanding_tx_[i];
+    if (now < o.next_ms) {
+      i++;
+      continue;
+    }
+    if (o.attempts >= MAX_RETX) {
+      ESP_LOGW(TAG, "want_ack id=0x%08x: no ack after %u retransmits, giving up", o.id, o.attempts);
+      this->outstanding_tx_.erase(this->outstanding_tx_.begin() + i);
+      continue;
+    }
+    o.attempts++;
+    ESP_LOGD(TAG, "want_ack id=0x%08x: retransmit %u/%u", o.id, o.attempts, MAX_RETX);
+    this->transmit_(o.packet);
+    o.next_ms = now + RETX_BASE_MS * o.attempts;
+    i++;
+  }
 }
 
 int Meshtastic::find_channel_index_(const std::string &name) {
@@ -719,6 +787,8 @@ void Meshtastic::send_dm_(uint32_t dest, uint32_t portnum, const uint8_t *payloa
   this->dedup_.is_duplicate(this->node_num_, id, millis());  // remember our own packet
   ESP_LOGD(TAG, "TX PKC DM to=!%08x id=0x%08x %uB", dest, id, (unsigned) packet.size());
   this->transmit_(packet);
+  if (want_ack)
+    this->track_want_ack_(id, packet);
 }
 
 void Meshtastic::send_our_node_info_(uint32_t dest, size_t channel_idx, bool want_response) {

@@ -120,6 +120,9 @@ class Meshtastic : public Component
                   bool want_ack, uint32_t request_id = 0, bool want_response = false);
   void send_ack_(uint32_t to, uint32_t request_id, size_t channel_idx);
   void send_routing_error_(uint32_t to, uint32_t request_id, size_t channel_idx, uint32_t error);
+  void track_want_ack_(uint32_t id, const std::vector<uint8_t> &packet);
+  void clear_outstanding_(uint32_t id);
+  void service_retransmits_();
   int find_channel_index_(const std::string &name);
   void send_telemetry_(const meshtastic_Telemetry &tel, size_t channel_idx, bool want_ack);
   void init_keypair_();
@@ -165,6 +168,14 @@ class Meshtastic : public Component
     float snr;                    // RX
   };
   std::vector<PendingDm> pending_dms_;
+  // Our want_ack sends awaiting confirmation
+  struct OutstandingTx {
+    uint32_t id;
+    std::vector<uint8_t> packet;
+    uint8_t attempts;
+    uint32_t next_ms;
+  };
+  std::vector<OutstandingTx> outstanding_tx_;
   std::vector<Channel> channels_;
   PacketDedup dedup_;
   NodeDb nodedb_;
