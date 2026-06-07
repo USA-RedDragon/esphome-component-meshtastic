@@ -118,6 +118,7 @@ class Meshtastic : public Component
   void send_data_(uint32_t portnum, const uint8_t *payload, size_t payload_len, uint32_t dest, size_t channel_idx,
                   bool want_ack, uint32_t request_id = 0, bool want_response = false);
   void send_ack_(uint32_t to, uint32_t request_id, size_t channel_idx);
+  void send_routing_error_(uint32_t to, uint32_t request_id, size_t channel_idx, uint32_t error);
   int find_channel_index_(const std::string &name);
   void send_telemetry_(const meshtastic_Telemetry &tel, size_t channel_idx, bool want_ack);
   void init_keypair_();
@@ -146,6 +147,10 @@ class Meshtastic : public Component
   bool has_keypair_{false};
   bool private_key_configured_{false};
   ESPPreferenceObject key_pref_;
+  meshtastic_Position self_position_{};
+  bool has_self_position_{false};
+  meshtastic_DeviceMetrics self_metrics_{};
+  bool has_self_metrics_{false};
   // One queue for both directions: a TX DM awaiting the destination's public key, or an RX DM we could
   // not decrypt yet awaiting the sender's public key
   struct PendingDm {

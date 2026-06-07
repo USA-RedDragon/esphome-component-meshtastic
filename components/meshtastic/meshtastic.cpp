@@ -225,6 +225,21 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
                pos.precision_bits);
       for (auto *t : this->on_position_triggers_)
         t->trigger(h.from, channel_name, pos, rssi, snr);
+      if (data.want_response && h.to == this->node_num_) {
+        int ridx = this->find_channel_index_(channel_name);
+        if (ridx < 0)
+          ridx = 0;
+        if (this->has_self_position_) {
+          uint8_t rbuf[meshtastic_Position_size];
+          pb_ostream_t ros = pb_ostream_from_buffer(rbuf, sizeof(rbuf));
+          if (pb_encode(&ros, meshtastic_Position_fields, &this->self_position_)) {
+            ESP_LOGD(TAG, "  position requested by !%08x; replying", h.from);
+            this->send_data_(meshtastic_PortNum_POSITION_APP, rbuf, ros.bytes_written, h.from, ridx, false, h.id);
+          }
+        } else {
+          this->send_routing_error_(h.from, h.id, ridx, meshtastic_Routing_Error_NO_RESPONSE);
+        }
+      }
     }
   }
 
@@ -281,6 +296,24 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
         default:
           ESP_LOGD(TAG, "  telemetry !%08x variant=%d (unhandled)", h.from, (int) tel.which_variant);
           break;
+      }
+      if (data.want_response && h.to == this->node_num_) {
+        int ridx = this->find_channel_index_(channel_name);
+        if (ridx < 0)
+          ridx = 0;
+        if (this->has_self_metrics_) {
+          meshtastic_Telemetry rt = meshtastic_Telemetry_init_zero;
+          rt.which_variant = meshtastic_Telemetry_device_metrics_tag;
+          rt.variant.device_metrics = this->self_metrics_;
+          uint8_t rbuf[meshtastic_Telemetry_size];
+          pb_ostream_t ros = pb_ostream_from_buffer(rbuf, sizeof(rbuf));
+          if (pb_encode(&ros, meshtastic_Telemetry_fields, &rt)) {
+            ESP_LOGD(TAG, "  telemetry requested by !%08x; replying", h.from);
+            this->send_data_(meshtastic_PortNum_TELEMETRY_APP, rbuf, ros.bytes_written, h.from, ridx, false, h.id);
+          }
+        } else {
+          this->send_routing_error_(h.from, h.id, ridx, meshtastic_Routing_Error_NO_RESPONSE);
+        }
       }
     }
   }
@@ -457,17 +490,21 @@ void Meshtastic::send_data_(uint32_t portnum, const uint8_t *payload, size_t pay
 }
 
 void Meshtastic::send_ack_(uint32_t to, uint32_t request_id, size_t channel_idx) {
+  this->send_routing_error_(to, request_id, channel_idx, meshtastic_Routing_Error_NONE);
+}
+
+void Meshtastic::send_routing_error_(uint32_t to, uint32_t request_id, size_t channel_idx, uint32_t error) {
   meshtastic_Routing routing = meshtastic_Routing_init_zero;
   routing.which_variant = meshtastic_Routing_error_reason_tag;
-  routing.error_reason = meshtastic_Routing_Error_NONE;
+  routing.error_reason = (meshtastic_Routing_Error) error;
 
   uint8_t buf[meshtastic_Routing_size];
   pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
   if (!pb_encode(&os, meshtastic_Routing_fields, &routing)) {
-    ESP_LOGW(TAG, "Routing ack encode failed");
+    ESP_LOGW(TAG, "Routing encode failed");
     return;
   }
-  ESP_LOGD(TAG, "ACK to=!%08x for id=0x%08x", to, request_id);
+  ESP_LOGD(TAG, "Routing to=!%08x for id=0x%08x error=%d", to, request_id, error);
   this->send_data_(meshtastic_PortNum_ROUTING_APP, buf, os.bytes_written, to, channel_idx, false, request_id);
 }
 
@@ -719,6 +756,9 @@ void Meshtastic::send_position(double latitude, double longitude, int32_t altitu
   pos.altitude = altitude;
   pos.precision_bits = precision_bits;
 
+  this->self_position_ = pos;
+  this->has_self_position_ = true;
+
   uint8_t buf[meshtastic_Position_size];
   pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
   if (!pb_encode(&os, meshtastic_Position_fields, &pos)) {
@@ -747,6 +787,8 @@ void Meshtastic::send_device_metrics(const meshtastic_DeviceMetrics &metrics, co
     ESP_LOGW(TAG, "send_telemetry: unknown channel \"%s\"", channel.c_str());
     return;
   }
+  this->self_metrics_ = metrics;
+  this->has_self_metrics_ = true;
   meshtastic_Telemetry tel = meshtastic_Telemetry_init_zero;
   tel.which_variant = meshtastic_Telemetry_device_metrics_tag;
   tel.variant.device_metrics = metrics;
