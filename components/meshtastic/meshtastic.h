@@ -114,6 +114,7 @@ class Meshtastic : public Component
 
  protected:
   void maybe_relay_(const std::vector<uint8_t> &packet, const PacketHeader &h, float snr);
+  void relay_traceroute_(const PacketHeader &h, const meshtastic_Data &data_in, size_t channel_idx, float snr);
   void transmit_(const std::vector<uint8_t> &packet);
   void send_data_(uint32_t portnum, const uint8_t *payload, size_t payload_len, uint32_t dest, size_t channel_idx,
                   bool want_ack, uint32_t request_id = 0, bool want_response = false);

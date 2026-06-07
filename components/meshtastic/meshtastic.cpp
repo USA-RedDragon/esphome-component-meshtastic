@@ -318,6 +318,29 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
     }
   }
 
+  // Traceroute addressed to us: append our RX SNR (dB*4, int8) for the final hop and reply
+  if (data.portnum == meshtastic_PortNum_TRACEROUTE_APP && data.want_response && h.to == this->node_num_ &&
+      h.from != 0 && h.from != this->node_num_) {
+    meshtastic_RouteDiscovery rd = meshtastic_RouteDiscovery_init_zero;
+    pb_istream_t rs = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+    if (pb_decode(&rs, meshtastic_RouteDiscovery_fields, &rd)) {
+      if (rd.snr_towards_count < (pb_size_t) (sizeof(rd.snr_towards) / sizeof(rd.snr_towards[0]))) {
+        int v = (int) lroundf(snr * 4.0f);
+        v = v > 127 ? 127 : (v < -128 ? -128 : v);
+        rd.snr_towards[rd.snr_towards_count++] = (int8_t) v;
+      }
+      int ridx = this->find_channel_index_(channel_name);
+      if (ridx < 0)
+        ridx = 0;
+      uint8_t rbuf[meshtastic_RouteDiscovery_size];
+      pb_ostream_t ros = pb_ostream_from_buffer(rbuf, sizeof(rbuf));
+      if (pb_encode(&ros, meshtastic_RouteDiscovery_fields, &rd)) {
+        ESP_LOGD(TAG, "  traceroute requested by !%08x; replying", h.from);
+        this->send_data_(meshtastic_PortNum_TRACEROUTE_APP, rbuf, ros.bytes_written, h.from, ridx, false, h.id);
+      }
+    }
+  }
+
   if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
     std::string text((const char *) data.payload.bytes, data.payload.size);
     ESP_LOGD(TAG, "  text: %s", text.c_str());
@@ -344,8 +367,6 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
     this->dropped_duplicate_++;
     return;
   }
-
-  this->maybe_relay_(packet, h, snr);
 
   const uint8_t *cipher = packet.data() + MESHTASTIC_HEADER_LEN;
   const size_t cipher_len = packet.size() - MESHTASTIC_HEADER_LEN;
@@ -376,6 +397,9 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
   }
 
   // Try each channel whose hash matches; decode the first that yields a valid Data.
+  meshtastic_Data data = meshtastic_Data_init_zero;
+  bool decoded = false;
+  size_t dec_ci = 0;
   bool hash_matched = false;
   for (size_t ci = 0; ci < this->channels_.size(); ci++) {
     Channel &ch = this->channels_[ci];
@@ -385,23 +409,34 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
     std::vector<uint8_t> plain(cipher_len);
     if (!ch.crypt(h.from, h.id, cipher, cipher_len, plain.data()))
       continue;
-    meshtastic_Data data = meshtastic_Data_init_zero;
+    meshtastic_Data d = meshtastic_Data_init_zero;
     pb_istream_t stream = pb_istream_from_buffer(plain.data(), plain.size());
-    if (!pb_decode(&stream, meshtastic_Data_fields, &data))
+    if (!pb_decode(&stream, meshtastic_Data_fields, &d))
       continue;
-    ESP_LOGD(TAG, "  decoded on \"%s\": portnum=%d payload=%uB", ch.name.c_str(), (int) data.portnum,
-             (unsigned) data.payload.size);
-    this->dispatch_decoded_(data, h, ch.name, rssi, snr);
+    ESP_LOGD(TAG, "  decoded on \"%s\": portnum=%d payload=%uB", ch.name.c_str(), (int) d.portnum,
+             (unsigned) d.payload.size);
+    this->dispatch_decoded_(d, h, ch.name, rssi, snr);
     if (h.want_ack && h.to == this->node_num_ && h.from != 0 && h.from != this->node_num_)
       this->send_ack_(h.from, h.id, ci);
-    return;
+    data = d;
+    decoded = true;
+    dec_ci = ci;
+    break;
   }
-  if (hash_matched) {
-    ESP_LOGD(TAG, "  channel hash 0x%02x matched but decode failed", h.channel);
-    this->decode_failed_++;
+  if (!decoded) {
+    if (hash_matched) {
+      ESP_LOGD(TAG, "  channel hash 0x%02x matched but decode failed", h.channel);
+      this->decode_failed_++;
+    } else {
+      ESP_LOGV(TAG, "  no key for channel hash 0x%02x", h.channel);
+      this->no_key_packets_++;
+    }
+  }
+
+  if (decoded && data.portnum == meshtastic_PortNum_TRACEROUTE_APP) {
+    this->relay_traceroute_(h, data, dec_ci, snr);
   } else {
-    ESP_LOGV(TAG, "  no key for channel hash 0x%02x", h.channel);
-    this->no_key_packets_++;
+    this->maybe_relay_(packet, h, snr);
   }
 }
 
@@ -424,6 +459,64 @@ void Meshtastic::maybe_relay_(const std::vector<uint8_t> &packet, const PacketHe
 
   const uint32_t delay = rebroadcast_delay_ms(this->role_, snr);
   ESP_LOGD(TAG, "  relaying in %ums (hop %u->%u)", delay, h.hop_limit, rh.hop_limit);
+  this->relayed_packets_++;
+  this->set_timeout(delay, [this, tx]() { this->transmit_(tx); });
+}
+
+void Meshtastic::relay_traceroute_(const PacketHeader &h, const meshtastic_Data &data_in, size_t channel_idx,
+                                   float snr) {
+  if (h.from == this->node_num_ || h.to == this->node_num_ || h.hop_limit == 0 ||
+      !role_rebroadcasts(this->role_) || channel_idx >= this->channels_.size())
+    return;
+
+  // Insert ourselves into the RouteDiscovery. Firmware: request_id==0 => travelling towards the destination
+  // (route/snr_towards); non-zero => the response travelling back (route_back/snr_back).
+  meshtastic_Data data = data_in;
+  bool appended = false;
+  meshtastic_RouteDiscovery rd = meshtastic_RouteDiscovery_init_zero;
+  pb_istream_t rs = pb_istream_from_buffer(data_in.payload.bytes, data_in.payload.size);
+  if (pb_decode(&rs, meshtastic_RouteDiscovery_fields, &rd)) {
+    int v = (int) lroundf(snr * 4.0f);
+    v = v > 127 ? 127 : (v < -128 ? -128 : v);
+    const pb_size_t cap = (pb_size_t) (sizeof(rd.route) / sizeof(rd.route[0]));
+    if (data_in.request_id == 0) {
+      if (rd.route_count < cap)
+        rd.route[rd.route_count++] = this->node_num_;
+      if (rd.snr_towards_count < cap)
+        rd.snr_towards[rd.snr_towards_count++] = (int8_t) v;
+    } else {
+      if (rd.route_back_count < cap)
+        rd.route_back[rd.route_back_count++] = this->node_num_;
+      if (rd.snr_back_count < cap)
+        rd.snr_back[rd.snr_back_count++] = (int8_t) v;
+    }
+    uint8_t rdbuf[meshtastic_RouteDiscovery_size];
+    pb_ostream_t ros = pb_ostream_from_buffer(rdbuf, sizeof(rdbuf));
+    if (pb_encode(&ros, meshtastic_RouteDiscovery_fields, &rd) && ros.bytes_written <= sizeof(data.payload.bytes)) {
+      memcpy(data.payload.bytes, rdbuf, ros.bytes_written);
+      data.payload.size = ros.bytes_written;
+      appended = true;
+    }
+  }
+
+  // Re-encode the Data and re-encrypt on the original channel (nonce keeps the original from/id).
+  uint8_t databuf[256];
+  pb_ostream_t dos = pb_ostream_from_buffer(databuf, sizeof(databuf));
+  if (!pb_encode(&dos, meshtastic_Data_fields, &data))
+    return;
+  Channel &ch = this->channels_[channel_idx];
+  std::vector<uint8_t> tx(MESHTASTIC_HEADER_LEN + dos.bytes_written);
+  if (!ch.crypt(h.from, h.id, databuf, dos.bytes_written, tx.data() + MESHTASTIC_HEADER_LEN))
+    return;
+  PacketHeader rh = h;
+  rh.hop_limit = h.hop_limit - 1;
+  rh.next_hop = 0;
+  rh.relay_node = (uint8_t) (this->node_num_ & 0xFF);
+  serialize_header(rh, tx.data());
+
+  const uint32_t delay = rebroadcast_delay_ms(this->role_, snr);
+  ESP_LOGD(TAG, "  relaying traceroute%s in %ums (hop %u->%u)", appended ? " (+self)" : "", delay, h.hop_limit,
+           rh.hop_limit);
   this->relayed_packets_++;
   this->set_timeout(delay, [this, tx]() { this->transmit_(tx); });
 }
