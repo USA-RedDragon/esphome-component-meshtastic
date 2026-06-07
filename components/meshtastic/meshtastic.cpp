@@ -570,6 +570,18 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
         ESP_LOGD(TAG, "  PKC DM from !%08x: portnum=%d payload=%uB", h.from, (int) data.portnum,
                  (unsigned) data.payload.size);
         this->dispatch_decoded_(data, h, "", rssi, snr);
+        // A want_ack DM addressed to us needs an ACK back, sent over PKC (channel acks don't apply here).
+        if (h.want_ack && h.from != this->node_num_) {
+          meshtastic_Routing routing = meshtastic_Routing_init_zero;
+          routing.which_variant = meshtastic_Routing_error_reason_tag;
+          routing.error_reason = meshtastic_Routing_Error_NONE;
+          uint8_t rbuf[meshtastic_Routing_size];
+          pb_ostream_t ros = pb_ostream_from_buffer(rbuf, sizeof(rbuf));
+          if (pb_encode(&ros, meshtastic_Routing_fields, &routing)) {
+            ESP_LOGD(TAG, "  ACK (PKC) to=!%08x for id=0x%08x", h.from, h.id);
+            this->send_dm_(h.from, meshtastic_PortNum_ROUTING_APP, rbuf, ros.bytes_written, false, h.id);
+          }
+        }
         return;
       }
       ESP_LOGD(TAG, "  PKC DM from !%08x failed to decrypt", h.from);
