@@ -194,8 +194,7 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
       ESP_LOGD(TAG, "  node !%08x \"%s\" (%s) %s", h.from, user.long_name, user.short_name,
                node == nullptr ? "(db off)" : (node_is_new ? "NEW" : "updated"));
       for (auto *t : this->on_nodeinfo_triggers_)
-        t->trigger(h.from, channel_name, std::string(user.long_name), std::string(user.short_name),
-                   hardware_model_name(user.hw_model), role_name(user.role), rssi, snr);
+        t->trigger(h.from, channel_name, user, rssi, snr);
       if (user.public_key.size == 32)
         this->flush_pending_dms_(h.from);
       if (data.want_response && h.to == this->node_num_) {
@@ -225,25 +224,40 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
       ESP_LOGD(TAG, "  position !%08x %.6f, %.6f alt=%dm prec=%ubits", h.from, lat, lon, (int) pos.altitude,
                pos.precision_bits);
       for (auto *t : this->on_position_triggers_)
-        t->trigger(h.from, channel_name, lat, lon, pos.altitude, pos.precision_bits, pos.time, rssi, snr);
+        t->trigger(h.from, channel_name, pos, rssi, snr);
     }
   }
 
   if (data.portnum == meshtastic_PortNum_TELEMETRY_APP && h.from != 0 && h.from != this->node_num_) {
     meshtastic_Telemetry tel = meshtastic_Telemetry_init_zero;
     pb_istream_t ts = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
-    if (pb_decode(&ts, meshtastic_Telemetry_fields, &tel) &&
-        tel.which_variant == meshtastic_Telemetry_device_metrics_tag) {
-      const meshtastic_DeviceMetrics &dm = tel.variant.device_metrics;
-      if (node != nullptr) {
-        node->has_device_metrics = true;
-        node->device_metrics = dm;
+    if (pb_decode(&ts, meshtastic_Telemetry_fields, &tel)) {
+      switch (tel.which_variant) {
+        case meshtastic_Telemetry_device_metrics_tag: {
+          const meshtastic_DeviceMetrics &dm = tel.variant.device_metrics;
+          if (node != nullptr) {
+            node->has_device_metrics = true;
+            node->device_metrics = dm;
+          }
+          ESP_LOGD(TAG, "  telemetry !%08x batt=%u%% %.2fV chUtil=%.1f%% airTx=%.1f%%", h.from, dm.battery_level,
+                   dm.voltage, dm.channel_utilization, dm.air_util_tx);
+          for (auto *t : this->on_telemetry_triggers_)
+            t->trigger(h.from, channel_name, dm, rssi, snr);
+          break;
+        }
+        case meshtastic_Telemetry_environment_metrics_tag: {
+          const meshtastic_EnvironmentMetrics &em = tel.variant.environment_metrics;
+          ESP_LOGD(TAG, "  env telemetry !%08x temp=%.1f hum=%.0f%% press=%.1f", h.from,
+                   em.has_temperature ? em.temperature : NAN, em.has_relative_humidity ? em.relative_humidity : NAN,
+                   em.has_barometric_pressure ? em.barometric_pressure : NAN);
+          for (auto *t : this->on_environment_triggers_)
+            t->trigger(h.from, channel_name, em, rssi, snr);
+          break;
+        }
+        default:
+          ESP_LOGD(TAG, "  telemetry !%08x variant=%d (unhandled)", h.from, (int) tel.which_variant);
+          break;
       }
-      ESP_LOGD(TAG, "  telemetry !%08x batt=%u%% %.2fV chUtil=%.1f%% airTx=%.1f%%", h.from, dm.battery_level,
-               dm.voltage, dm.channel_utilization, dm.air_util_tx);
-      for (auto *t : this->on_telemetry_triggers_)
-        t->trigger(h.from, channel_name, dm.battery_level, dm.voltage, dm.channel_utilization, dm.air_util_tx,
-                   dm.uptime_seconds, rssi, snr);
     }
   }
 

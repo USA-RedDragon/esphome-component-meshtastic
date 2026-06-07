@@ -79,16 +79,16 @@ class Meshtastic : public Component
 
   using OnPacketTrigger = Trigger<uint32_t, uint32_t, uint32_t, std::vector<uint8_t>, float, float>;
   using OnTextTrigger = Trigger<uint32_t, uint32_t, std::string, std::string, float, float>;
-  using OnNodeInfoTrigger =
-      Trigger<uint32_t, std::string, std::string, std::string, std::string, std::string, float, float>;
-  using OnPositionTrigger =
-      Trigger<uint32_t, std::string, double, double, int32_t, uint32_t, uint32_t, float, float>;
-  using OnTelemetryTrigger = Trigger<uint32_t, std::string, uint32_t, float, float, float, uint32_t, float, float>;
+  using OnNodeInfoTrigger = Trigger<uint32_t, std::string, meshtastic_User, float, float>;
+  using OnPositionTrigger = Trigger<uint32_t, std::string, meshtastic_Position, float, float>;
+  using OnTelemetryTrigger = Trigger<uint32_t, std::string, meshtastic_DeviceMetrics, float, float>;
+  using OnEnvironmentTrigger = Trigger<uint32_t, std::string, meshtastic_EnvironmentMetrics, float, float>;
   void add_on_packet_trigger(OnPacketTrigger *t) { this->on_packet_triggers_.push_back(t); }
   void add_on_text_trigger(OnTextTrigger *t) { this->on_text_triggers_.push_back(t); }
   void add_on_nodeinfo_trigger(OnNodeInfoTrigger *t) { this->on_nodeinfo_triggers_.push_back(t); }
   void add_on_position_trigger(OnPositionTrigger *t) { this->on_position_triggers_.push_back(t); }
   void add_on_telemetry_trigger(OnTelemetryTrigger *t) { this->on_telemetry_triggers_.push_back(t); }
+  void add_on_environment_trigger(OnEnvironmentTrigger *t) { this->on_environment_triggers_.push_back(t); }
 
   void send_text(const std::string &text, uint32_t dest, const std::string &channel, bool want_ack);
 
@@ -159,6 +159,7 @@ class Meshtastic : public Component
   std::vector<OnNodeInfoTrigger *> on_nodeinfo_triggers_;
   std::vector<OnPositionTrigger *> on_position_triggers_;
   std::vector<OnTelemetryTrigger *> on_telemetry_triggers_;
+  std::vector<OnEnvironmentTrigger *> on_environment_triggers_;
 
   // Lifetime diagnostic counters (surfaced via the sensor platform).
   uint32_t rx_packets_{0};

@@ -108,16 +108,20 @@ meshtastic:
           args: ['from', 'channel.c_str()', 'text.c_str()']
     on_nodeinfo:
       - logger.log:
-          format: "NodeInfo !%08x (ch %s): %s (%s) role=%s rssi=%.0f"
-          args: ['from', 'channel.c_str()', 'long_name.c_str()', 'short_name.c_str()', 'role.c_str()', 'rssi']
+          format: "NodeInfo !%08x (ch %s): %s (%s) role=%d rssi=%.0f"
+          args: ['from', 'channel.c_str()', 'user.long_name', 'user.short_name', '(int) user.role', 'rssi']
     on_position:
       - logger.log:
           format: "Position !%08x (ch %s): %.6f, %.6f %dm prec=%u"
-          args: ['from', 'channel.c_str()', 'latitude', 'longitude', 'altitude', 'precision_bits']
+          args: ['from', 'channel.c_str()', 'position.latitude_i * 1e-7', 'position.longitude_i * 1e-7', 'position.altitude', 'position.precision_bits']
     on_telemetry:
       - logger.log:
           format: "Telemetry !%08x (ch %s): batt=%u pct %.2fV up=%us"
-          args: ['from', 'channel.c_str()', 'battery_level', 'voltage', 'uptime_seconds']
+          args: ['from', 'channel.c_str()', 'metrics.battery_level', 'metrics.voltage', 'metrics.uptime_seconds']
+    on_environment_metrics:
+      - logger.log:
+          format: "Env !%08x (ch %s): %.1fC %.0f%%RH %.1fhPa lux=%.0f iaq=%u"
+          args: ['from', 'channel.c_str()', 'metrics.temperature', 'metrics.relative_humidity', 'metrics.barometric_pressure', 'metrics.lux', 'metrics.iaq']
 
 # Local status entities (this node / whole-mesh aggregates), surfaced to Home Assistant.
 sensor:

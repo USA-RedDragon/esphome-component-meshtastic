@@ -22,26 +22,28 @@ class TextTrigger : public Trigger<uint32_t, uint32_t, std::string, std::string,
   explicit TextTrigger(Meshtastic *parent) { parent->add_on_text_trigger(this); }
 };
 
-// NODEINFO_APP. (from, channel, long_name, short_name, hw_model name, role name, rssi, snr)
-class NodeInfoTrigger
-    : public Trigger<uint32_t, std::string, std::string, std::string, std::string, std::string, float, float> {
+// NODEINFO_APP. (from, channel, user, rssi, snr)
+class NodeInfoTrigger : public Trigger<uint32_t, std::string, meshtastic_User, float, float> {
  public:
   explicit NodeInfoTrigger(Meshtastic *parent) { parent->add_on_nodeinfo_trigger(this); }
 };
 
-// POSITION_APP. (from, channel, latitude deg, longitude deg, altitude m, precision_bits, time epoch, rssi, snr)
-// precision_bits < 32 means the sender coarsened the location (anonymization); 0 = unset.
-class PositionTrigger
-    : public Trigger<uint32_t, std::string, double, double, int32_t, uint32_t, uint32_t, float, float> {
+// POSITION_APP. (from, channel, position, rssi, snr)
+class PositionTrigger : public Trigger<uint32_t, std::string, meshtastic_Position, float, float> {
  public:
   explicit PositionTrigger(Meshtastic *parent) { parent->add_on_position_trigger(this); }
 };
 
-// TELEMETRY_APP device-metrics. (from, channel, battery %, voltage, channel util %, air util tx %, uptime s, rssi, snr)
-class TelemetryTrigger
-    : public Trigger<uint32_t, std::string, uint32_t, float, float, float, uint32_t, float, float> {
+// TELEMETRY_APP device-metrics. (from, channel, metrics, rssi, snr)
+class TelemetryTrigger : public Trigger<uint32_t, std::string, meshtastic_DeviceMetrics, float, float> {
  public:
   explicit TelemetryTrigger(Meshtastic *parent) { parent->add_on_telemetry_trigger(this); }
+};
+
+// TELEMETRY_APP environment-metrics. (from, channel, metrics, rssi, snr)
+class EnvironmentTrigger : public Trigger<uint32_t, std::string, meshtastic_EnvironmentMetrics, float, float> {
+ public:
+  explicit EnvironmentTrigger(Meshtastic *parent) { parent->add_on_environment_trigger(this); }
 };
 
 // meshtastic.send_text action. dest defaults to broadcast; channel is a channel name (empty = primary).

@@ -33,6 +33,7 @@ CONF_ON_TEXT = "on_text"
 CONF_ON_NODEINFO = "on_nodeinfo"
 CONF_ON_POSITION = "on_position"
 CONF_ON_TELEMETRY = "on_telemetry"
+CONF_ON_ENVIRONMENT_METRICS = "on_environment_metrics"
 CONF_TEXT = "text"
 CONF_CHANNEL = "channel"
 CONF_TO = "to"
@@ -95,6 +96,12 @@ DEFAULT_PSK = list(base64.b64decode("1PG7OiApB1nwvP+rz05pAQ=="))
 meshtastic_ns = cg.esphome_ns.namespace("meshtastic")
 Meshtastic = meshtastic_ns.class_("Meshtastic", cg.Component)
 
+# Generated nanopb structs handed whole to the domain triggers (read any field via .<field>).
+meshtastic_User = cg.global_ns.struct("meshtastic_User")
+meshtastic_Position = cg.global_ns.struct("meshtastic_Position")
+meshtastic_DeviceMetrics = cg.global_ns.struct("meshtastic_DeviceMetrics")
+meshtastic_EnvironmentMetrics = cg.global_ns.struct("meshtastic_EnvironmentMetrics")
+
 PacketTrigger = meshtastic_ns.class_(
     "PacketTrigger",
     automation.Trigger.template(
@@ -107,21 +114,19 @@ TextTrigger = meshtastic_ns.class_(
 )
 NodeInfoTrigger = meshtastic_ns.class_(
     "NodeInfoTrigger",
-    automation.Trigger.template(
-        cg.uint32, cg.std_string, cg.std_string, cg.std_string, cg.std_string, cg.std_string, cg.float_, cg.float_
-    ),
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_User, cg.float_, cg.float_),
 )
 PositionTrigger = meshtastic_ns.class_(
     "PositionTrigger",
-    automation.Trigger.template(
-        cg.uint32, cg.std_string, cg.double, cg.double, cg.int32, cg.uint32, cg.uint32, cg.float_, cg.float_
-    ),
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_Position, cg.float_, cg.float_),
 )
 TelemetryTrigger = meshtastic_ns.class_(
     "TelemetryTrigger",
-    automation.Trigger.template(
-        cg.uint32, cg.std_string, cg.uint32, cg.float_, cg.float_, cg.float_, cg.uint32, cg.float_, cg.float_
-    ),
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_DeviceMetrics, cg.float_, cg.float_),
+)
+EnvironmentTrigger = meshtastic_ns.class_(
+    "EnvironmentTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_EnvironmentMetrics, cg.float_, cg.float_),
 )
 SendTextAction = meshtastic_ns.class_("SendTextAction", automation.Action)
 SendPositionAction = meshtastic_ns.class_("SendPositionAction", automation.Action)
@@ -375,6 +380,9 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_ON_TELEMETRY): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(TelemetryTrigger)}
         ),
+        cv.Optional(CONF_ON_ENVIRONMENT_METRICS): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(EnvironmentTrigger)}
+        ),
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
 ).extend(cv.COMPONENT_SCHEMA)
@@ -441,10 +449,7 @@ async def to_code(config):
             [
                 (cg.uint32, "from"),
                 (cg.std_string, "channel"),
-                (cg.std_string, "long_name"),
-                (cg.std_string, "short_name"),
-                (cg.std_string, "hw_model"),
-                (cg.std_string, "role"),
+                (meshtastic_User, "user"),
                 (cg.float_, "rssi"),
                 (cg.float_, "snr"),
             ],
@@ -457,11 +462,7 @@ async def to_code(config):
             [
                 (cg.uint32, "from"),
                 (cg.std_string, "channel"),
-                (cg.double, "latitude"),
-                (cg.double, "longitude"),
-                (cg.int32, "altitude"),
-                (cg.uint32, "precision_bits"),
-                (cg.uint32, "time"),
+                (meshtastic_Position, "position"),
                 (cg.float_, "rssi"),
                 (cg.float_, "snr"),
             ],
@@ -474,11 +475,20 @@ async def to_code(config):
             [
                 (cg.uint32, "from"),
                 (cg.std_string, "channel"),
-                (cg.uint32, "battery_level"),
-                (cg.float_, "voltage"),
-                (cg.float_, "channel_utilization"),
-                (cg.float_, "air_util_tx"),
-                (cg.uint32, "uptime_seconds"),
+                (meshtastic_DeviceMetrics, "metrics"),
+                (cg.float_, "rssi"),
+                (cg.float_, "snr"),
+            ],
+            conf,
+        )
+    for conf in config.get(CONF_ON_ENVIRONMENT_METRICS, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        await automation.build_automation(
+            trigger,
+            [
+                (cg.uint32, "from"),
+                (cg.std_string, "channel"),
+                (meshtastic_EnvironmentMetrics, "metrics"),
                 (cg.float_, "rssi"),
                 (cg.float_, "snr"),
             ],
