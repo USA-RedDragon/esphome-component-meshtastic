@@ -18,9 +18,9 @@ static const char *const TAG = "meshtastic";
 
 static const uint32_t NODE_ONLINE_WINDOW_MS = 2 * 60 * 60 * 1000;
 
-// Small persisted node DB so the whole blob fits a single NVS entry.
-// Only nodes we have a User (name/key) for are saved.
-static const size_t PERSIST_MAX_NODES = 32;
+// Persisted node DB: one fixed-size NVS entry per slot, sized to follow the configured node DB
+// (node_db_size). Only nodes we have a User (name/key) for are saved.
+// Keys: a "count" entry plus one PersistNode entry per slot, derived from a per-node base hash.
 struct PersistNode {
   uint32_t num;
   uint32_t hw_model;
@@ -32,10 +32,6 @@ struct PersistNode {
   bool has_position;
   char long_name[40];
   char short_name[5];
-};
-struct PersistedNodeDb {
-  uint32_t count;
-  PersistNode nodes[PERSIST_MAX_NODES];
 };
 
 void Meshtastic::add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink) {
@@ -75,19 +71,24 @@ void Meshtastic::init_keypair_() {
   this->has_keypair_ = x25519_shared(this->private_key_, basepoint, this->public_key_);
 }
 
+// Per-node-DB base key; slot i lives at base + 1 + i, the saved count at base.
+static inline uint32_t nodedb_pref_base_(uint32_t node_num) { return fnv1_hash("meshtastic_nodedb") ^ node_num; }
+
 void Meshtastic::load_nodedb_() {
   if (!this->nodedb_.enabled())
     return;
-  this->nodedb_pref_ =
-      global_preferences->make_preference<PersistedNodeDb>(fnv1_hash("meshtastic_nodedb") ^ this->node_num_);
-  PersistedNodeDb blob{};
-  if (!this->nodedb_pref_.load(&blob))
+  const uint32_t base = nodedb_pref_base_(this->node_num_);
+  uint32_t count = 0;
+  auto count_pref = global_preferences->make_preference<uint32_t>(base);
+  if (!count_pref.load(&count))
     return;
+  const uint32_t cap = (uint32_t) this->nodedb_.max_nodes();
   const uint32_t now = millis();
   uint32_t restored = 0;
-  for (uint32_t i = 0; i < blob.count && i < PERSIST_MAX_NODES; i++) {
-    const PersistNode &p = blob.nodes[i];
-    if (p.num == 0 || p.num == this->node_num_)
+  for (uint32_t i = 0; i < count && i < cap; i++) {
+    PersistNode p{};
+    auto slot = global_preferences->make_preference<PersistNode>(base + 1 + i);
+    if (!slot.load(&p) || p.num == 0 || p.num == this->node_num_)
       continue;
     bool is_new = false;
     meshtastic_NodeInfoLite *node = this->nodedb_.get_or_create(p.num, &is_new);
@@ -115,13 +116,15 @@ void Meshtastic::load_nodedb_() {
 void Meshtastic::save_nodedb_() {
   if (!this->nodedb_.enabled())
     return;
-  PersistedNodeDb blob{};
+  const uint32_t base = nodedb_pref_base_(this->node_num_);
+  const uint32_t cap = (uint32_t) this->nodedb_.max_nodes();
+  uint32_t count = 0;
   for (const auto &nd : this->nodedb_.nodes()) {
-    if (blob.count >= PERSIST_MAX_NODES)
+    if (count >= cap)
       break;
     if (!nd.has_user)
       continue;  // only persist nodes we have an identity for
-    PersistNode &p = blob.nodes[blob.count++];
+    PersistNode p{};
     p.num = nd.num;
     p.hw_model = nd.user.hw_model;
     p.role = nd.user.role;
@@ -132,9 +135,13 @@ void Meshtastic::save_nodedb_() {
     memcpy(p.public_key, nd.user.public_key.bytes, sizeof(p.public_key));
     memcpy(p.long_name, nd.user.long_name, sizeof(p.long_name));
     memcpy(p.short_name, nd.user.short_name, sizeof(p.short_name));
+    auto slot = global_preferences->make_preference<PersistNode>(base + 1 + count);
+    slot.save(&p);
+    count++;
   }
-  this->nodedb_pref_.save(&blob);
-  ESP_LOGD(TAG, "Persisted %u nodes", (unsigned) blob.count);
+  auto count_pref = global_preferences->make_preference<uint32_t>(base);
+  count_pref.save(&count);
+  ESP_LOGD(TAG, "Persisted %u nodes", (unsigned) count);
 }
 
 void Meshtastic::setup() {

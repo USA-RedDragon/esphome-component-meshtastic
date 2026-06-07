@@ -168,7 +168,6 @@ class Meshtastic : public Component
   bool has_keypair_{false};
   bool private_key_configured_{false};
   ESPPreferenceObject key_pref_;
-  ESPPreferenceObject nodedb_pref_;
   bool nodedb_dirty_{false};
   meshtastic_Position self_position_{};
   bool has_self_position_{false};
