@@ -419,6 +419,11 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
     for (auto *t : this->on_text_triggers_)
       t->trigger(h.from, h.to, channel_name, text, rssi, snr);
   }
+
+  // Compressed text (unishox2) is rare on-air (mainline firmware no longer auto-compresses). We don't carry
+  // the unishox2 codec, so surface it rather than silently dropping
+  if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_COMPRESSED_APP)
+    ESP_LOGW(TAG, "  compressed text from !%08x not decoded (unishox2 unsupported)", h.from);
 }
 
 void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float snr) {
