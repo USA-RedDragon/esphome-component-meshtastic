@@ -47,6 +47,10 @@ CONF_ON_HEALTH_METRICS = "on_health_metrics"
 CONF_ON_TRACEROUTE_RESPONSE = "on_traceroute_response"
 CONF_ON_NEIGHBOR_INFO = "on_neighbor_info"
 CONF_ON_WAYPOINT = "on_waypoint"
+CONF_ON_DETECTION = "on_detection"
+CONF_ON_REPLY = "on_reply"
+CONF_ON_RANGE_TEST = "on_range_test"
+CONF_ON_KEY_VERIFICATION = "on_key_verification"
 CONF_NEIGHBOR_INFO_INTERVAL = "neighbor_info_interval"
 CONF_TEXT = "text"
 CONF_CHANNEL = "channel"
@@ -133,6 +137,7 @@ meshtastic_HealthMetrics = cg.global_ns.struct("meshtastic_HealthMetrics")
 meshtastic_RouteDiscovery = cg.global_ns.struct("meshtastic_RouteDiscovery")
 meshtastic_NeighborInfo = cg.global_ns.struct("meshtastic_NeighborInfo")
 meshtastic_Waypoint = cg.global_ns.struct("meshtastic_Waypoint")
+meshtastic_KeyVerification = cg.global_ns.struct("meshtastic_KeyVerification")
 
 PacketTrigger = meshtastic_ns.class_(
     "PacketTrigger",
@@ -188,7 +193,24 @@ WaypointTrigger = meshtastic_ns.class_(
     "WaypointTrigger",
     automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_Waypoint, cg.float_, cg.float_),
 )
+DetectionTrigger = meshtastic_ns.class_(
+    "DetectionTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, cg.std_string, cg.float_, cg.float_),
+)
+ReplyTrigger = meshtastic_ns.class_(
+    "ReplyTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, cg.std_string, cg.float_, cg.float_),
+)
+RangeTestTrigger = meshtastic_ns.class_(
+    "RangeTestTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, cg.std_string, cg.float_, cg.float_),
+)
+KeyVerificationTrigger = meshtastic_ns.class_(
+    "KeyVerificationTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_KeyVerification, cg.float_, cg.float_),
+)
 SendTextAction = meshtastic_ns.class_("SendTextAction", automation.Action)
+SendDetectionAction = meshtastic_ns.class_("SendDetectionAction", automation.Action)
 SendPositionAction = meshtastic_ns.class_("SendPositionAction", automation.Action)
 SendTelemetryAction = meshtastic_ns.class_("SendTelemetryAction", automation.Action)
 SendEnvironmentMetricsAction = meshtastic_ns.class_("SendEnvironmentMetricsAction", automation.Action)
@@ -215,6 +237,27 @@ async def send_text_to_code(config, action_id, template_arg, args):
     cg.add(var.set_text(await cg.templatable(config[CONF_TEXT], args, cg.std_string)))
     cg.add(var.set_channel(await cg.templatable(config[CONF_CHANNEL], args, cg.std_string)))
     cg.add(var.set_dest(await cg.templatable(config[CONF_TO], args, cg.uint32)))
+    cg.add(var.set_want_ack(await cg.templatable(config[CONF_WANT_ACK], args, cg.bool_)))
+    return var
+
+
+@automation.register_action(
+    "meshtastic.send_detection",
+    SendDetectionAction,
+    cv.Schema(
+        {
+            cv.GenerateID(): cv.use_id(Meshtastic),
+            cv.Required(CONF_TEXT): cv.templatable(cv.string),
+            cv.Optional(CONF_CHANNEL, default=""): cv.templatable(cv.string),
+            cv.Optional(CONF_WANT_ACK, default=False): cv.templatable(cv.boolean),
+        }
+    ),
+    synchronous=True,
+)
+async def send_detection_to_code(config, action_id, template_arg, args):
+    var = cg.new_Pvariable(action_id, template_arg, await cg.get_variable(config[CONF_ID]))
+    cg.add(var.set_text(await cg.templatable(config[CONF_TEXT], args, cg.std_string)))
+    cg.add(var.set_channel(await cg.templatable(config[CONF_CHANNEL], args, cg.std_string)))
     cg.add(var.set_want_ack(await cg.templatable(config[CONF_WANT_ACK], args, cg.bool_)))
     return var
 
@@ -495,6 +538,18 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_ON_WAYPOINT): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(WaypointTrigger)}
         ),
+        cv.Optional(CONF_ON_DETECTION): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(DetectionTrigger)}
+        ),
+        cv.Optional(CONF_ON_REPLY): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(ReplyTrigger)}
+        ),
+        cv.Optional(CONF_ON_RANGE_TEST): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(RangeTestTrigger)}
+        ),
+        cv.Optional(CONF_ON_KEY_VERIFICATION): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(KeyVerificationTrigger)}
+        ),
         cv.Optional(CONF_NEIGHBOR_INFO_INTERVAL): validate_neighbor_info_interval,  # omit to disable
         cv.Optional(CONF_UDP): UDP_SCHEMA,
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
@@ -659,6 +714,36 @@ async def to_code(config):
                 (cg.uint32, "from"),
                 (cg.std_string, "channel"),
                 (meshtastic_Waypoint, "waypoint"),
+                (cg.float_, "rssi"),
+                (cg.float_, "snr"),
+            ],
+            conf,
+        )
+
+    # Text-payload triggers (detection / reply / range_test) share (from, channel, text, rssi, snr).
+    for conf_key in (CONF_ON_DETECTION, CONF_ON_REPLY, CONF_ON_RANGE_TEST):
+        for conf in config.get(conf_key, []):
+            trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+            await automation.build_automation(
+                trigger,
+                [
+                    (cg.uint32, "from"),
+                    (cg.std_string, "channel"),
+                    (cg.std_string, "text"),
+                    (cg.float_, "rssi"),
+                    (cg.float_, "snr"),
+                ],
+                conf,
+            )
+
+    for conf in config.get(CONF_ON_KEY_VERIFICATION, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        await automation.build_automation(
+            trigger,
+            [
+                (cg.uint32, "from"),
+                (cg.std_string, "channel"),
+                (meshtastic_KeyVerification, "kv"),
                 (cg.float_, "rssi"),
                 (cg.float_, "snr"),
             ],

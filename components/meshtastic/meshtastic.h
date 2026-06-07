@@ -107,6 +107,10 @@ class Meshtastic : public Component
   using OnTraceRouteResponseTrigger = Trigger<uint32_t, std::string, meshtastic_RouteDiscovery, float, float>;
   using OnNeighborInfoTrigger = Trigger<uint32_t, std::string, meshtastic_NeighborInfo, float, float>;
   using OnWaypointTrigger = Trigger<uint32_t, std::string, meshtastic_Waypoint, float, float>;
+  using OnDetectionTrigger = Trigger<uint32_t, std::string, std::string, float, float>;
+  using OnReplyTrigger = Trigger<uint32_t, std::string, std::string, float, float>;
+  using OnRangeTestTrigger = Trigger<uint32_t, std::string, std::string, float, float>;
+  using OnKeyVerificationTrigger = Trigger<uint32_t, std::string, meshtastic_KeyVerification, float, float>;
   void add_on_packet_trigger(OnPacketTrigger *t) { this->on_packet_triggers_.push_back(t); }
   void add_on_text_trigger(OnTextTrigger *t) { this->on_text_triggers_.push_back(t); }
   void add_on_nodeinfo_trigger(OnNodeInfoTrigger *t) { this->on_nodeinfo_triggers_.push_back(t); }
@@ -122,8 +126,15 @@ class Meshtastic : public Component
   }
   void add_on_neighbor_info_trigger(OnNeighborInfoTrigger *t) { this->on_neighbor_info_triggers_.push_back(t); }
   void add_on_waypoint_trigger(OnWaypointTrigger *t) { this->on_waypoint_triggers_.push_back(t); }
+  void add_on_detection_trigger(OnDetectionTrigger *t) { this->on_detection_triggers_.push_back(t); }
+  void add_on_reply_trigger(OnReplyTrigger *t) { this->on_reply_triggers_.push_back(t); }
+  void add_on_range_test_trigger(OnRangeTestTrigger *t) { this->on_range_test_triggers_.push_back(t); }
+  void add_on_key_verification_trigger(OnKeyVerificationTrigger *t) {
+    this->on_key_verification_triggers_.push_back(t);
+  }
 
   void send_text(const std::string &text, uint32_t dest, const std::string &channel, bool want_ack);
+  void send_detection(const std::string &text, const std::string &channel, bool want_ack);
 
   void send_position(double latitude, double longitude, int32_t altitude, uint32_t precision_bits,
                      const std::string &channel, bool want_ack);
@@ -244,6 +255,10 @@ class Meshtastic : public Component
   std::vector<OnTraceRouteResponseTrigger *> on_traceroute_response_triggers_;
   std::vector<OnNeighborInfoTrigger *> on_neighbor_info_triggers_;
   std::vector<OnWaypointTrigger *> on_waypoint_triggers_;
+  std::vector<OnDetectionTrigger *> on_detection_triggers_;
+  std::vector<OnReplyTrigger *> on_reply_triggers_;
+  std::vector<OnRangeTestTrigger *> on_range_test_triggers_;
+  std::vector<OnKeyVerificationTrigger *> on_key_verification_triggers_;
 
   // Lifetime diagnostic counters (surfaced via the sensor platform).
   uint32_t rx_packets_{0};

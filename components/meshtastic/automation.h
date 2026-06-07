@@ -82,6 +82,30 @@ class WaypointTrigger : public Trigger<uint32_t, std::string, meshtastic_Waypoin
   explicit WaypointTrigger(Meshtastic *parent) { parent->add_on_waypoint_trigger(this); }
 };
 
+// DETECTION_SENSOR_APP. (from, channel, text, rssi, snr)
+class DetectionTrigger : public Trigger<uint32_t, std::string, std::string, float, float> {
+ public:
+  explicit DetectionTrigger(Meshtastic *parent) { parent->add_on_detection_trigger(this); }
+};
+
+// REPLY_APP. (from, channel, text, rssi, snr)
+class ReplyTrigger : public Trigger<uint32_t, std::string, std::string, float, float> {
+ public:
+  explicit ReplyTrigger(Meshtastic *parent) { parent->add_on_reply_trigger(this); }
+};
+
+// RANGE_TEST_APP. (from, channel, text, rssi, snr)
+class RangeTestTrigger : public Trigger<uint32_t, std::string, std::string, float, float> {
+ public:
+  explicit RangeTestTrigger(Meshtastic *parent) { parent->add_on_range_test_trigger(this); }
+};
+
+// KEY_VERIFICATION_APP. (from, channel, kv, rssi, snr)
+class KeyVerificationTrigger : public Trigger<uint32_t, std::string, meshtastic_KeyVerification, float, float> {
+ public:
+  explicit KeyVerificationTrigger(Meshtastic *parent) { parent->add_on_key_verification_trigger(this); }
+};
+
 // Fires when the reply to a traceroute we initiated returns. (from, channel, route, rssi, snr): the decoded
 // RouteDiscovery (route/snr_towards outbound, route_back/snr_back on the return; SNRs are dB*4 as int8).
 class TraceRouteResponseTrigger : public Trigger<uint32_t, std::string, meshtastic_RouteDiscovery, float, float> {
@@ -101,6 +125,22 @@ template<typename... Ts> class SendTextAction : public Action<Ts...> {
   void play(const Ts &...x) override {
     this->parent_->send_text(this->text_.value(x...), this->dest_.value(x...), this->channel_.value(x...),
                              this->want_ack_.value(x...));
+  }
+
+ protected:
+  Meshtastic *parent_;
+};
+
+// meshtastic.send_detection action: broadcast a detection-sensor alert string (DETECTION_SENSOR_APP).
+template<typename... Ts> class SendDetectionAction : public Action<Ts...> {
+ public:
+  explicit SendDetectionAction(Meshtastic *parent) : parent_(parent) {}
+  TEMPLATABLE_VALUE(std::string, text)
+  TEMPLATABLE_VALUE(std::string, channel)
+  TEMPLATABLE_VALUE(bool, want_ack)
+
+  void play(const Ts &...x) override {
+    this->parent_->send_detection(this->text_.value(x...), this->channel_.value(x...), this->want_ack_.value(x...));
   }
 
  protected:

@@ -521,6 +521,34 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
     }
   }
 
+  if (data.portnum == meshtastic_PortNum_DETECTION_SENSOR_APP && h.from != 0 && h.from != this->node_num_) {
+    std::string text((const char *) data.payload.bytes, data.payload.size);
+    ESP_LOGD(TAG, "  detection !%08x: %s", h.from, text.c_str());
+    for (auto *t : this->on_detection_triggers_)
+      t->trigger(h.from, channel_name, text, rssi, snr);
+  }
+
+  if (data.portnum == meshtastic_PortNum_REPLY_APP && h.from != 0 && h.from != this->node_num_) {
+    std::string text((const char *) data.payload.bytes, data.payload.size);
+    for (auto *t : this->on_reply_triggers_)
+      t->trigger(h.from, channel_name, text, rssi, snr);
+  }
+
+  if (data.portnum == meshtastic_PortNum_RANGE_TEST_APP && h.from != 0 && h.from != this->node_num_) {
+    std::string text((const char *) data.payload.bytes, data.payload.size);
+    for (auto *t : this->on_range_test_triggers_)
+      t->trigger(h.from, channel_name, text, rssi, snr);
+  }
+
+  if (data.portnum == meshtastic_PortNum_KEY_VERIFICATION_APP && h.from != 0 && h.from != this->node_num_) {
+    meshtastic_KeyVerification kv = meshtastic_KeyVerification_init_zero;
+    pb_istream_t ks = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+    if (pb_decode(&ks, meshtastic_KeyVerification_fields, &kv)) {
+      for (auto *t : this->on_key_verification_triggers_)
+        t->trigger(h.from, channel_name, kv, rssi, snr);
+    }
+  }
+
   if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
     std::string text((const char *) data.payload.bytes, data.payload.size);
     ESP_LOGD(TAG, "  text: %s", text.c_str());
@@ -882,6 +910,17 @@ void Meshtastic::send_text(const std::string &text, uint32_t dest, const std::st
   }
   this->send_data_(meshtastic_PortNum_TEXT_MESSAGE_APP, (const uint8_t *) text.data(), text.size(), dest, idx,
                    want_ack);
+}
+
+void Meshtastic::send_detection(const std::string &text, const std::string &channel, bool want_ack) {
+  const int idx = this->find_channel_index_(channel);
+  if (idx < 0) {
+    ESP_LOGW(TAG, "send_detection: unknown channel \"%s\"", channel.c_str());
+    return;
+  }
+  ESP_LOGD(TAG, "TX detection: %s", text.c_str());
+  this->send_data_(meshtastic_PortNum_DETECTION_SENSOR_APP, (const uint8_t *) text.data(), text.size(),
+                   MESHTASTIC_BROADCAST_ADDR, idx, want_ack);
 }
 
 // Meshtastic PKC nonce (13 bytes): packet id (4 LE) | extra nonce (4 LE) | from-node (4 LE) | 0.
