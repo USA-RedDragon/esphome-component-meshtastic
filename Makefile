@@ -10,7 +10,7 @@ PY_FILES=components/meshtastic/__init__.py components/meshtastic/sensor/__init__
          scripts/gen_enums.py
 
 # Transitive imports reachable from mesh.proto + mqtt.proto + deviceonly.proto.
-PROTO_NAMES=atak channel config device_ui deviceonly localonly mesh module_config mqtt portnums telemetry xmodem
+PROTO_NAMES=atak channel config device_ui deviceonly localonly mesh module_config mqtt portnums remote_hardware telemetry xmodem
 
 PROTO_FILES=$(addprefix $(PROTO_DIR)/,$(addsuffix .proto,$(PROTO_NAMES)))
 

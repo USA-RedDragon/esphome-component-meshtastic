@@ -106,6 +106,14 @@ meshtastic:
         enabled: true
         interval: 1h          # >= 1h
         position_precision: 14
+    remote_hardware:          # optional: let the mesh read/write entities
+      channel: Private        # only this channel may drive GPIO
+      pins:
+        # Each entry maps a Meshtastic GPIO "bit number" to one ESPHome entity, up to 64 GPIOs.
+        - gpio: 0
+          switch: relay1      # writable (WRITE_GPIOS) + readable (READ_GPIOS)
+        - gpio: 1
+          binary_sensor: door1  # readable + watchable (WATCH_GPIOS -> GPIOS_CHANGED)
     channels:
       # psk: 'default' | 'none' | index 0-255 | base64 (1/16/32 bytes) | hex (32/64 chars)
       - name: LongFast
@@ -301,6 +309,19 @@ button:
           soil_temperature: 14.2
           iaq: 75
           one_wire_temperature: [21.5, 22.0, 19.8]   # up to 8
+
+# Entities bound to remote_hardware above. The mesh drives/reads these declared entities
+switch:
+  - platform: gpio
+    id: relay1
+    pin: GPIO10
+    name: "Relay 1"
+
+binary_sensor:
+  - platform: gpio
+    id: door1
+    pin: GPIO11
+    name: "Door 1"
 
 uart:
   - id: gps_uart

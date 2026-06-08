@@ -5,6 +5,7 @@
 #include "crypto.h"
 #include "enum_names.h"
 #include "mesh.pb.h"
+#include "remote_hardware.pb.h"
 #include <pb_decode.h>
 #include <pb_encode.h>
 #include <cmath>
@@ -197,6 +198,7 @@ void Meshtastic::setup() {
 #ifdef USE_SENSOR
   this->set_interval(30000, [this]() { this->publish_stats_(); });
 #endif
+  this->remote_hw_setup_();
 }
 
 #ifdef USE_SENSOR
@@ -266,6 +268,9 @@ void Meshtastic::dump_config() {
   if (this->mqtt_enabled_)
     ESP_LOGW(TAG, "  MQTT gateway configured but the esphome `mqtt:` component is not present; disabled");
 #endif
+  if (this->remote_hw_enabled_)
+    ESP_LOGCONFIG(TAG, "  Remote hardware: %u pin(s) on channel \"%s\"", (unsigned) this->remote_hw_pins_.size(),
+                  this->remote_hw_channel_.c_str());
 }
 
 #ifdef USE_SX126X
@@ -537,6 +542,20 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
       ESP_LOGD(TAG, "  waypoint !%08x id=%u \"%s\"", h.from, wp.id, wp.name);
       for (auto *t : this->on_waypoint_triggers_)
         t->trigger(h.from, channel_name, wp, rssi, snr);
+    }
+  }
+
+  // Remote hardware (GPIO over mesh): honored only when explicitly bound to ESPHome entities on the
+  // configured channel; otherwise denied
+  if (data.portnum == meshtastic_PortNum_REMOTE_HARDWARE_APP && h.from != 0 && h.from != this->node_num_) {
+    if (!this->handle_remote_hardware_(data, h, channel_name)) {
+      ESP_LOGW(TAG, "  remote-hardware request from !%08x denied", h.from);
+      if (data.want_response && h.to == this->node_num_) {
+        int ridx = this->find_channel_index_(channel_name);
+        if (ridx < 0)
+          ridx = 0;
+        this->send_routing_error_(h.from, h.id, ridx, meshtastic_Routing_Error_NOT_AUTHORIZED);
+      }
     }
   }
 
@@ -966,6 +985,115 @@ void Meshtastic::send_transport_packet(const std::string &channel, const std::ve
     return;
   }
   this->send_data_(meshtastic_PortNum_PRIVATE_APP, buf.data(), buf.size(), MESHTASTIC_BROADCAST_ADDR, idx, false);
+}
+
+uint64_t Meshtastic::remote_hw_read_(uint64_t mask) {
+  uint64_t value = 0;
+#if defined(USE_SWITCH) || defined(USE_BINARY_SENSOR)
+  for (auto &p : this->remote_hw_pins_) {
+    if (!((mask >> p.bit) & 1ULL))
+      continue;
+    bool on = false;
+#ifdef USE_SWITCH
+    if (p.sw != nullptr)
+      on = p.sw->state;
+#endif
+#ifdef USE_BINARY_SENSOR
+    if (p.bs != nullptr)
+      on = p.bs->state;
+#endif
+    if (on)
+      value |= (1ULL << p.bit);
+  }
+#endif
+  return value;
+}
+
+void Meshtastic::remote_hw_setup_() {
+  if (!this->remote_hw_enabled_)
+    return;
+#if defined(USE_SWITCH) || defined(USE_BINARY_SENSOR)
+  for (auto &p : this->remote_hw_pins_) {
+    const uint8_t bit = p.bit;
+#ifdef USE_SWITCH
+    if (p.sw != nullptr)
+      p.sw->add_on_state_callback([this, bit](bool state) { this->remote_hw_notify_(bit, state); });
+#endif
+#ifdef USE_BINARY_SENSOR
+    if (p.bs != nullptr)
+      p.bs->add_on_state_callback([this, bit](bool state) { this->remote_hw_notify_(bit, state); });
+#endif
+  }
+#endif
+}
+
+void Meshtastic::remote_hw_notify_(uint8_t bit, bool value) {
+  (void) value;
+  if (!((this->remote_hw_watch_mask_ >> bit) & 1ULL))
+    return;
+  const int idx = this->find_channel_index_(this->remote_hw_channel_);
+  if (idx < 0)
+    return;
+  meshtastic_HardwareMessage msg = meshtastic_HardwareMessage_init_zero;
+  msg.type = meshtastic_HardwareMessage_Type_GPIOS_CHANGED;
+  msg.gpio_mask = this->remote_hw_watch_mask_;
+  msg.gpio_value = this->remote_hw_read_(this->remote_hw_watch_mask_);
+  uint8_t buf[meshtastic_HardwareMessage_size];
+  pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
+  if (pb_encode(&os, meshtastic_HardwareMessage_fields, &msg)) {
+    ESP_LOGD(TAG, "  remote-hw GPIOS_CHANGED bit %u -> mask=0x%llx val=0x%llx", bit,
+             (unsigned long long) msg.gpio_mask, (unsigned long long) msg.gpio_value);
+    this->send_data_(meshtastic_PortNum_REMOTE_HARDWARE_APP, buf, os.bytes_written, MESHTASTIC_BROADCAST_ADDR, idx,
+                     false);
+  }
+}
+
+bool Meshtastic::handle_remote_hardware_(const meshtastic_Data &data, const PacketHeader &h,
+                                         const std::string &channel_name) {
+  if (!this->remote_hw_enabled_ || channel_name != this->remote_hw_channel_)
+    return false;
+  meshtastic_HardwareMessage msg = meshtastic_HardwareMessage_init_zero;
+  pb_istream_t s = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
+  if (!pb_decode(&s, meshtastic_HardwareMessage_fields, &msg)) {
+    ESP_LOGW(TAG, "  remote-hw: bad HardwareMessage from !%08x", h.from);
+    return true;
+  }
+  const int idx = this->find_channel_index_(channel_name);
+  switch (msg.type) {
+    case meshtastic_HardwareMessage_Type_WRITE_GPIOS: {
+#ifdef USE_SWITCH
+      for (auto &p : this->remote_hw_pins_) {
+        if (p.sw == nullptr || !((msg.gpio_mask >> p.bit) & 1ULL))
+          continue;
+        const bool on = (msg.gpio_value >> p.bit) & 1ULL;
+        ESP_LOGD(TAG, "  remote-hw WRITE bit %u=%d from !%08x", p.bit, on, h.from);
+        if (on)
+          p.sw->turn_on();
+        else
+          p.sw->turn_off();
+      }
+#endif
+      return true;
+    }
+    case meshtastic_HardwareMessage_Type_READ_GPIOS: {
+      meshtastic_HardwareMessage reply = meshtastic_HardwareMessage_init_zero;
+      reply.type = meshtastic_HardwareMessage_Type_READ_GPIOS_REPLY;
+      reply.gpio_mask = msg.gpio_mask;
+      reply.gpio_value = this->remote_hw_read_(msg.gpio_mask);
+      uint8_t buf[meshtastic_HardwareMessage_size];
+      pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
+      if (idx >= 0 && pb_encode(&os, meshtastic_HardwareMessage_fields, &reply))
+        this->send_data_(meshtastic_PortNum_REMOTE_HARDWARE_APP, buf, os.bytes_written, h.from, idx, false);
+      return true;
+    }
+    case meshtastic_HardwareMessage_Type_WATCH_GPIOS: {
+      this->remote_hw_watch_mask_ = msg.gpio_mask;
+      ESP_LOGD(TAG, "  remote-hw WATCH mask=0x%llx from !%08x", (unsigned long long) msg.gpio_mask, h.from);
+      return true;
+    }
+    default:
+      return true;
+  }
 }
 
 // Meshtastic PKC nonce (13 bytes): packet id (4 LE) | extra nonce (4 LE) | from-node (4 LE) | 0.

@@ -20,6 +20,12 @@
 #ifdef USE_TEXT_SENSOR
 #include "esphome/components/text_sensor/text_sensor.h"
 #endif
+#ifdef USE_SWITCH
+#include "esphome/components/switch/switch.h"
+#endif
+#ifdef USE_BINARY_SENSOR
+#include "esphome/components/binary_sensor/binary_sensor.h"
+#endif
 
 #if __has_include("esphome/components/sx126x/sx126x.h")
 #include "esphome/components/sx126x/sx126x.h"
@@ -163,6 +169,29 @@ class Meshtastic : public Component
     this->mqtt_map_precision_ = precision;
   }
 
+  // Remote hardware (REMOTE_HARDWARE_APP): maps a Meshtastic GPIO bit number onto a declared ESPHome
+  // switch (read+write) or binary_sensor (read+watch)
+  void set_remote_hardware(const std::string &channel) {
+    this->remote_hw_channel_ = channel;
+    this->remote_hw_enabled_ = true;
+  }
+#ifdef USE_SWITCH
+  void add_remote_hw_switch(uint8_t bit, switch_::Switch *sw) {
+    RemoteHwPin p{};
+    p.bit = bit;
+    p.sw = sw;
+    this->remote_hw_pins_.push_back(p);
+  }
+#endif
+#ifdef USE_BINARY_SENSOR
+  void add_remote_hw_binary_sensor(uint8_t bit, binary_sensor::BinarySensor *bs) {
+    RemoteHwPin p{};
+    p.bit = bit;
+    p.bs = bs;
+    this->remote_hw_pins_.push_back(p);
+  }
+#endif
+
   void handle_rx(const std::vector<uint8_t> &packet, float rssi, float snr);
 
 #if defined(USE_MESH_UDP) || defined(USE_MQTT)
@@ -199,6 +228,11 @@ class Meshtastic : public Component
   void mqtt_publish_map_();
   void mqtt_on_downlink_(const std::string &channel_name, const std::string &payload);
   std::string mqtt_topic_(const char *kind, const std::string &channel_name) const;
+  // Remote hardware. Returns true if it consumed the packet.
+  bool handle_remote_hardware_(const meshtastic_Data &data, const PacketHeader &h, const std::string &channel_name);
+  void remote_hw_setup_();
+  void remote_hw_notify_(uint8_t bit, bool value);
+  uint64_t remote_hw_read_(uint64_t mask);
   void send_telemetry_(const meshtastic_Telemetry &tel, size_t channel_idx, bool want_ack);
   void init_keypair_();
   void dispatch_decoded_(const meshtastic_Data &data, const PacketHeader &h, const std::string &channel_name,
@@ -308,6 +342,20 @@ class Meshtastic : public Component
   uint32_t mqtt_map_precision_{14};
   bool mqtt_subscribed_{false};
   uint32_t mqtt_last_map_ms_{0};
+
+  struct RemoteHwPin {
+    uint8_t bit;
+#ifdef USE_SWITCH
+    switch_::Switch *sw{nullptr};
+#endif
+#ifdef USE_BINARY_SENSOR
+    binary_sensor::BinarySensor *bs{nullptr};
+#endif
+  };
+  std::vector<RemoteHwPin> remote_hw_pins_;
+  std::string remote_hw_channel_;
+  bool remote_hw_enabled_{false};
+  uint64_t remote_hw_watch_mask_{0};
 
   // Lifetime diagnostic counters (surfaced via the sensor platform).
   uint32_t rx_packets_{0};

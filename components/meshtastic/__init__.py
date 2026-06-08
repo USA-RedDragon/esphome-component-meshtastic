@@ -4,7 +4,7 @@ import binascii
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import automation
-from esphome.components import sx126x, sx127x
+from esphome.components import binary_sensor, switch, sx126x, sx127x
 from esphome.const import CONF_ID, CONF_NAME, CONF_TRIGGER_ID
 from esphome.core import CORE
 
@@ -43,6 +43,11 @@ CONF_MAP_REPORTING = "map_reporting"
 CONF_ENABLED = "enabled"
 CONF_INTERVAL = "interval"
 CONF_POSITION_PRECISION = "position_precision"
+CONF_REMOTE_HARDWARE = "remote_hardware"
+CONF_PINS = "pins"
+CONF_GPIO = "gpio"
+CONF_SWITCH = "switch"
+CONF_BINARY_SENSOR = "binary_sensor"
 CONF_ON_PACKET = "on_packet"
 CONF_ON_TEXT = "on_text"
 CONF_ON_NODEINFO = "on_nodeinfo"
@@ -514,6 +519,26 @@ MQTT_SCHEMA = cv.Schema(
     }
 )
 
+# Remote hardware: map a Meshtastic GPIO bit number onto a declared ESPHome switch (read+write) or
+# binary_sensor (read+watch)
+REMOTE_HW_PIN_SCHEMA = cv.All(
+    cv.Schema(
+        {
+            cv.Required(CONF_GPIO): cv.int_range(min=0, max=63),
+            cv.Optional(CONF_SWITCH): cv.use_id(switch.Switch),
+            cv.Optional(CONF_BINARY_SENSOR): cv.use_id(binary_sensor.BinarySensor),
+        }
+    ),
+    cv.has_exactly_one_key(CONF_SWITCH, CONF_BINARY_SENSOR),
+)
+
+REMOTE_HARDWARE_SCHEMA = cv.Schema(
+    {
+        cv.Required(CONF_CHANNEL): cv.string,
+        cv.Required(CONF_PINS): cv.ensure_list(REMOTE_HW_PIN_SCHEMA),
+    }
+)
+
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(Meshtastic),
@@ -583,6 +608,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_NEIGHBOR_INFO_INTERVAL): validate_neighbor_info_interval,  # omit to disable
         cv.Optional(CONF_UDP): UDP_SCHEMA,
         cv.Optional(CONF_MQTT): MQTT_SCHEMA,
+        cv.Optional(CONF_REMOTE_HARDWARE): REMOTE_HARDWARE_SCHEMA,
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
 ).extend(cv.COMPONENT_SCHEMA)
@@ -633,6 +659,17 @@ async def to_code(config):
                     mr[CONF_POSITION_PRECISION],
                 )
             )
+
+    if CONF_REMOTE_HARDWARE in config:
+        rh = config[CONF_REMOTE_HARDWARE]
+        cg.add(var.set_remote_hardware(rh[CONF_CHANNEL]))
+        for pin in rh[CONF_PINS]:
+            if CONF_SWITCH in pin:
+                sw = await cg.get_variable(pin[CONF_SWITCH])
+                cg.add(var.add_remote_hw_switch(pin[CONF_GPIO], sw))
+            else:
+                bs = await cg.get_variable(pin[CONF_BINARY_SENSOR])
+                cg.add(var.add_remote_hw_binary_sensor(pin[CONF_GPIO], bs))
 
     for ch in config.get(CONF_CHANNELS, []):
         cg.add(var.add_channel(ch[CONF_NAME], ch[CONF_PSK], ch[CONF_UPLINK], ch[CONF_DOWNLINK]))
