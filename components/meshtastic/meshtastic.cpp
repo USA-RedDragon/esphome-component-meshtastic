@@ -1476,8 +1476,9 @@ void Meshtastic::mqtt_subscribe_() {
       continue;
     const std::string topic = this->mqtt_root_topic_ + "/" + this->mqtt_region_ + "/2/json/" + ch.name + "/tx";
     const std::string chan = ch.name;
-    mqtt::global_mqtt_client->subscribe(
-        topic, [this, chan](const std::string &t, const std::string &payload) { this->mqtt_on_downlink_(chan, payload); });
+    mqtt::global_mqtt_client->subscribe(topic, [this, chan](const std::string &t, const std::string &payload) {
+      this->mqtt_on_downlink_(chan, payload);
+    });
     ESP_LOGD(TAG, "MQTT downlink subscribed: %s", topic.c_str());
   }
 }
@@ -1516,8 +1517,8 @@ void Meshtastic::mqtt_uplink_(const std::vector<uint8_t> &frame, const PacketHea
       std::vector<uint8_t> buf(sz);
       pb_ostream_t os = pb_ostream_from_buffer(buf.data(), buf.size());
       if (pb_encode(&os, meshtastic_ServiceEnvelope_fields, &env))
-        mqtt::global_mqtt_client->publish(this->mqtt_topic_("e", ch.name), (const char *) buf.data(), os.bytes_written, 0,
-                                          false);
+        mqtt::global_mqtt_client->publish(this->mqtt_topic_("e", ch.name), (const char *) buf.data(), os.bytes_written,
+                                          0, false);
     }
   }
 
@@ -1669,8 +1670,8 @@ void Meshtastic::mqtt_publish_map_() {
 }
 #else
 void Meshtastic::mqtt_loop_() {}
-void Meshtastic::mqtt_uplink_(const std::vector<uint8_t> &, const PacketHeader &, const meshtastic_Data &, size_t, float,
-                              float) {}
+void Meshtastic::mqtt_uplink_(const std::vector<uint8_t> &, const PacketHeader &, const meshtastic_Data &, size_t,
+                              float, float) {}
 #endif  // USE_MQTT
 
 }  // namespace meshtastic

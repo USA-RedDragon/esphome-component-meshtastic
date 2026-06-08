@@ -1,4 +1,4 @@
-.PHONY: gen proto-gen proto-clean clean
+.PHONY: gen proto-gen proto-clean clean format lint
 PROTO_ROOT=./meshtastic-protobufs
 PROTO_DIR=$(PROTO_ROOT)/meshtastic
 PROTO_OUT=./components/meshtastic
@@ -48,3 +48,8 @@ gen-clean:
 	@rm -f components/meshtastic/_enums.py components/meshtastic/enum_names.h components/meshtastic/enum_names.cpp
 	@echo "Generated enums cleaned"
 
+format:
+	clang-format -i $(CPP_FILES)
+
+lint:
+	clang-format --dry-run --Werror $(CPP_FILES)
