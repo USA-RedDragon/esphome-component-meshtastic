@@ -561,6 +561,13 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
       t->trigger(h.from, h.to, channel_name, text, rssi, snr);
   }
 
+  // packet_transport backhaul: hand PRIVATE_APP frames to any transport bound to this channel (H).
+  if (data.portnum == meshtastic_PortNum_PRIVATE_APP && h.from != this->node_num_) {
+    for (auto &tl : this->transport_listeners_)
+      if (tl.channel == channel_name)
+        tl.cb(data.payload.bytes, data.payload.size);
+  }
+
   // Compressed text (unishox2) is rare on-air (mainline firmware no longer auto-compresses). We don't carry
   // the unishox2 codec, so surface it rather than silently dropping
   if (data.portnum == meshtastic_PortNum_TEXT_MESSAGE_COMPRESSED_APP)
@@ -926,6 +933,24 @@ void Meshtastic::send_detection(const std::string &text, const std::string &chan
   ESP_LOGD(TAG, "TX detection: %s", text.c_str());
   this->send_data_(meshtastic_PortNum_DETECTION_SENSOR_APP, (const uint8_t *) text.data(), text.size(),
                    MESHTASTIC_BROADCAST_ADDR, idx, want_ack);
+}
+
+void Meshtastic::register_transport(const std::string &channel, TransportRxCallback cb) {
+  this->transport_listeners_.push_back({channel, std::move(cb)});
+}
+
+void Meshtastic::send_transport_packet(const std::string &channel, const std::vector<uint8_t> &buf) {
+  const int idx = this->find_channel_index_(channel);
+  if (idx < 0) {
+    ESP_LOGW(TAG, "transport: unknown channel \"%s\"", channel.c_str());
+    return;
+  }
+  if (buf.size() > meshtastic_Constants_DATA_PAYLOAD_LEN) {
+    ESP_LOGW(TAG, "transport: frame %u > %d max, dropping", (unsigned) buf.size(),
+             (int) meshtastic_Constants_DATA_PAYLOAD_LEN);
+    return;
+  }
+  this->send_data_(meshtastic_PortNum_PRIVATE_APP, buf.data(), buf.size(), MESHTASTIC_BROADCAST_ADDR, idx, false);
 }
 
 // Meshtastic PKC nonce (13 bytes): packet id (4 LE) | extra nonce (4 LE) | from-node (4 LE) | 0.

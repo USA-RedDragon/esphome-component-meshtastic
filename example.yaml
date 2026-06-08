@@ -103,6 +103,8 @@ meshtastic:
         psk: Uw==             # 1-byte index (default key, last byte bumped)
       - name: Cleartext
         psk: none             # no encryption
+      - name: packet_transport        # dedicated PSK channel for the packet_transport tunnel below
+        psk: F5CAiGQ2EUBk/I/GCBeBJQYgz0j0ji0bf87B1l7HjEQ=
     on_packet:
       # Raw escape hatch: fires for every decoded packet.
       - logger.log:
@@ -199,6 +201,15 @@ sensor:
       name: "Mesh packets without a key"   # heard on a channel we don't carry (normal)
     decode_failed:
       name: "Mesh decode failures"         # hash matched but decrypt/parse failed (bad data)
+
+  # Receiving side of the packet_transport tunnel (see the packet_transport: block below). Reads a sensor
+  # shared by another ESPHome node over the mesh. `provider` is that node's esphome `name:`; `remote_id` is
+  # the id it broadcasts (its sensor id, or its broadcast_id override).
+  - platform: packet_transport
+    provider: remote-node       # the other node's `esphome: name:`
+    remote_id: gps_alt          # the sensor id that node shares
+    name: "Remote node altitude"
+    unit_of_measurement: m
 
 text_sensor:
   - platform: meshtastic
@@ -298,3 +309,13 @@ interval:
           longitude: !lambda return id(gps_lon).state;
           altitude: !lambda return (int) id(gps_alt).state;
           precision_bits: 32      # < 32 coarsens our location
+
+# packet_transport: an ESPHome <-> ESPHome data tunnel over the mesh, riding PRIVATE_APP packets on the
+# channel "packet_transport" defined above.
+packet_transport:
+  - platform: meshtastic
+    meshtastic_id: id_meshtastic
+    channel: packet_transport
+    update_interval: 60s
+    sensors:
+      - gps_alt

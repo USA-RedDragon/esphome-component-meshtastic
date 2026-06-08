@@ -145,6 +145,11 @@ class Meshtastic : public Component
   void send_neighbor_info();
   void send_traceroute(uint32_t dest, const std::string &channel, bool want_ack);
 
+  // packet_transport backhaul
+  using TransportRxCallback = std::function<void(const uint8_t *data, size_t len)>;
+  void register_transport(const std::string &channel, TransportRxCallback cb);
+  void send_transport_packet(const std::string &channel, const std::vector<uint8_t> &buf);
+
   void handle_rx(const std::vector<uint8_t> &packet, float rssi, float snr);
 
 #ifdef USE_MESH_UDP
@@ -259,6 +264,12 @@ class Meshtastic : public Component
   std::vector<OnReplyTrigger *> on_reply_triggers_;
   std::vector<OnRangeTestTrigger *> on_range_test_triggers_;
   std::vector<OnKeyVerificationTrigger *> on_key_verification_triggers_;
+
+  struct TransportListener {
+    std::string channel;
+    TransportRxCallback cb;
+  };
+  std::vector<TransportListener> transport_listeners_;
 
   // Lifetime diagnostic counters (surfaced via the sensor platform).
   uint32_t rx_packets_{0};
