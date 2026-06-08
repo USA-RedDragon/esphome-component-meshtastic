@@ -41,6 +41,12 @@ wifi:
   password: !secret wifi_password
   fast_connect: True
 
+# Required by the meshtastic `mqtt:` gateway if used
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+
 external_components:
   - source: github://USA-RedDragon/esphome-component-meshtastic@main
     components: [meshtastic]
@@ -91,12 +97,21 @@ meshtastic:
     udp:                      # optional Meshtastic-over-UDP LAN bridge (needs wifi/ethernet)
       address: 224.0.0.69
       port: 4403
+    mqtt:                     # optional MQTT ecosystem gateway (also needs the top-level `mqtt:` below)
+      root_topic: msh
+      region: US              # topic segment, e.g. US / EU_868 (we don't track region elsewhere)
+      encryption_enabled: true   # publish the encrypted packet (false = publish decrypted)
+      json: true              # also publish/accept human-friendly JSON
+      map_reporting:          # optional: announce this node to the public Meshtastic map
+        enabled: true
+        interval: 1h          # >= 1h
+        position_precision: 14
     channels:
       # psk: 'default' | 'none' | index 0-255 | base64 (1/16/32 bytes) | hex (32/64 chars)
       - name: LongFast
         psk: default          # the well-known public key (same as AQ== / index 1)
-        uplink: false         # (MQTT, phase F) publish packets heard on this channel
-        downlink: false       # (MQTT, phase F) inject packets from MQTT onto this channel
+        uplink: true          # publish packets heard on this channel to MQTT (see mqtt: below)
+        downlink: true        # accept MQTT JSON commands and inject them onto this channel
       - name: Private
         psk: 72+hNz2WKsLa5iESyBeYFRKMczH8ob3e5KE0gC+T7YQ=   # full 32-byte AES-256 key
       - name: Regional

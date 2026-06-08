@@ -9,6 +9,7 @@
 #include "nodedb.h"
 #include "protocol.h"
 #include "router.h"
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -150,9 +151,21 @@ class Meshtastic : public Component
   void register_transport(const std::string &channel, TransportRxCallback cb);
   void send_transport_packet(const std::string &channel, const std::vector<uint8_t> &buf);
 
+  // MQTT gateway
+  void set_mqtt_enabled(bool enabled) { this->mqtt_enabled_ = enabled; }
+  void set_mqtt_root_topic(const std::string &t) { this->mqtt_root_topic_ = t; }
+  void set_mqtt_region(const std::string &r) { this->mqtt_region_ = r; }
+  void set_mqtt_encryption_enabled(bool e) { this->mqtt_encryption_enabled_ = e; }
+  void set_mqtt_json_enabled(bool e) { this->mqtt_json_enabled_ = e; }
+  void set_mqtt_map_reporting(bool enabled, uint32_t interval_s, uint32_t precision) {
+    this->mqtt_map_enabled_ = enabled;
+    this->mqtt_map_interval_s_ = interval_s;
+    this->mqtt_map_precision_ = precision;
+  }
+
   void handle_rx(const std::vector<uint8_t> &packet, float rssi, float snr);
 
-#ifdef USE_MESH_UDP
+#if defined(USE_MESH_UDP) || defined(USE_MQTT)
   void loop() override;
 #endif
 
@@ -172,6 +185,20 @@ class Meshtastic : public Component
   void clear_outstanding_(uint32_t id);
   void service_retransmits_();
   int find_channel_index_(const std::string &name);
+  // Shared on-air-frame <-> meshtastic_MeshPacket marshalling (used by the UDP bridge and MQTT gateway).
+  // marshal_: a raw on-air frame (16B header + ciphertext) -> a MeshPacket with the `encrypted` variant.
+  // unmarshal_: the reverse. Both return false on a malformed/oversized/non-encrypted input.
+  bool marshal_meshpacket_(const std::vector<uint8_t> &frame, meshtastic_MeshPacket &mp);
+  bool unmarshal_meshpacket_(const meshtastic_MeshPacket &mp, std::vector<uint8_t> &frame);
+
+  // MQTT gateway internals
+  void mqtt_loop_();
+  void mqtt_subscribe_();
+  void mqtt_uplink_(const std::vector<uint8_t> &frame, const PacketHeader &h, const meshtastic_Data &decoded,
+                    size_t channel_idx, float rssi, float snr);
+  void mqtt_publish_map_();
+  void mqtt_on_downlink_(const std::string &channel_name, const std::string &payload);
+  std::string mqtt_topic_(const char *kind, const std::string &channel_name) const;
   void send_telemetry_(const meshtastic_Telemetry &tel, size_t channel_idx, bool want_ack);
   void init_keypair_();
   void dispatch_decoded_(const meshtastic_Data &data, const PacketHeader &h, const std::string &channel_name,
@@ -270,6 +297,17 @@ class Meshtastic : public Component
     TransportRxCallback cb;
   };
   std::vector<TransportListener> transport_listeners_;
+
+  bool mqtt_enabled_{false};
+  std::string mqtt_root_topic_{"msh"};
+  std::string mqtt_region_;
+  bool mqtt_encryption_enabled_{true};
+  bool mqtt_json_enabled_{true};
+  bool mqtt_map_enabled_{false};
+  uint32_t mqtt_map_interval_s_{3600};
+  uint32_t mqtt_map_precision_{14};
+  bool mqtt_subscribed_{false};
+  uint32_t mqtt_last_map_ms_{0};
 
   // Lifetime diagnostic counters (surfaced via the sensor platform).
   uint32_t rx_packets_{0};

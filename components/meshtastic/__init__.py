@@ -34,6 +34,15 @@ CONF_PERSIST_NODE_DB = "persist_node_db"
 CONF_UDP = "udp"
 CONF_ADDRESS = "address"
 CONF_PORT = "port"
+CONF_MQTT = "mqtt"
+CONF_ROOT_TOPIC = "root_topic"
+CONF_REGION = "region"
+CONF_ENCRYPTION_ENABLED = "encryption_enabled"
+CONF_JSON = "json"
+CONF_MAP_REPORTING = "map_reporting"
+CONF_ENABLED = "enabled"
+CONF_INTERVAL = "interval"
+CONF_POSITION_PRECISION = "position_precision"
 CONF_ON_PACKET = "on_packet"
 CONF_ON_TEXT = "on_text"
 CONF_ON_NODEINFO = "on_nodeinfo"
@@ -484,6 +493,27 @@ UDP_SCHEMA = cv.Schema(
     }
 )
 
+# MQTT gateway
+MAP_REPORTING_SCHEMA = cv.Schema(
+    {
+        cv.Optional(CONF_ENABLED, default=True): cv.boolean,
+        cv.Optional(CONF_INTERVAL, default="1h"): cv.All(
+            cv.positive_time_period_seconds, cv.Range(min=cv.TimePeriod(hours=1))
+        ),
+        cv.Optional(CONF_POSITION_PRECISION, default=14): cv.int_range(min=0, max=32),
+    }
+)
+
+MQTT_SCHEMA = cv.Schema(
+    {
+        cv.Optional(CONF_ROOT_TOPIC, default="msh"): cv.string,
+        cv.Required(CONF_REGION): cv.string,
+        cv.Optional(CONF_ENCRYPTION_ENABLED, default=True): cv.boolean,
+        cv.Optional(CONF_JSON, default=True): cv.boolean,
+        cv.Optional(CONF_MAP_REPORTING): MAP_REPORTING_SCHEMA,
+    }
+)
+
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(Meshtastic),
@@ -552,6 +582,7 @@ CONFIG_SCHEMA = cv.Schema(
         ),
         cv.Optional(CONF_NEIGHBOR_INFO_INTERVAL): validate_neighbor_info_interval,  # omit to disable
         cv.Optional(CONF_UDP): UDP_SCHEMA,
+        cv.Optional(CONF_MQTT): MQTT_SCHEMA,
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
     }
 ).extend(cv.COMPONENT_SCHEMA)
@@ -585,6 +616,23 @@ async def to_code(config):
     cg.add(var.set_persist_node_db(config[CONF_PERSIST_NODE_DB]))
     if CONF_UDP in config:
         cg.add(var.set_udp(config[CONF_UDP][CONF_ADDRESS], config[CONF_UDP][CONF_PORT]))
+
+    if CONF_MQTT in config:
+        mqtt_conf = config[CONF_MQTT]
+        cg.add(var.set_mqtt_enabled(True))
+        cg.add(var.set_mqtt_root_topic(mqtt_conf[CONF_ROOT_TOPIC]))
+        cg.add(var.set_mqtt_region(mqtt_conf[CONF_REGION]))
+        cg.add(var.set_mqtt_encryption_enabled(mqtt_conf[CONF_ENCRYPTION_ENABLED]))
+        cg.add(var.set_mqtt_json_enabled(mqtt_conf[CONF_JSON]))
+        if CONF_MAP_REPORTING in mqtt_conf:
+            mr = mqtt_conf[CONF_MAP_REPORTING]
+            cg.add(
+                var.set_mqtt_map_reporting(
+                    mr[CONF_ENABLED],
+                    int(mr[CONF_INTERVAL].total_seconds),
+                    mr[CONF_POSITION_PRECISION],
+                )
+            )
 
     for ch in config.get(CONF_CHANNELS, []):
         cg.add(var.add_channel(ch[CONF_NAME], ch[CONF_PSK], ch[CONF_UPLINK], ch[CONF_DOWNLINK]))

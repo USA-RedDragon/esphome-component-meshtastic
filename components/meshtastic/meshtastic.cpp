@@ -19,6 +19,11 @@
 #endif
 #endif
 
+#ifdef USE_MQTT
+#include "esphome/components/mqtt/mqtt_client.h"
+#include "mqtt.pb.h"
+#endif
+
 namespace esphome {
 namespace meshtastic {
 
@@ -251,6 +256,15 @@ void Meshtastic::dump_config() {
   if (this->udp_enabled_)
     ESP_LOGCONFIG(TAG, "  UDP bridge: %s:%u (%s)", this->udp_address_.c_str(), this->udp_port_,
                   this->udp_socket_ != nullptr ? "active" : "pending network");
+#endif
+#ifdef USE_MQTT
+  if (this->mqtt_enabled_)
+    ESP_LOGCONFIG(TAG, "  MQTT gateway: root=%s region=%s encryption=%s json=%s map=%s", this->mqtt_root_topic_.c_str(),
+                  this->mqtt_region_.c_str(), YESNO(this->mqtt_encryption_enabled_), YESNO(this->mqtt_json_enabled_),
+                  YESNO(this->mqtt_map_enabled_));
+#else
+  if (this->mqtt_enabled_)
+    ESP_LOGW(TAG, "  MQTT gateway configured but the esphome `mqtt:` component is not present; disabled");
 #endif
 }
 
@@ -657,6 +671,7 @@ void Meshtastic::handle_rx(const std::vector<uint8_t> &packet, float rssi, float
     this->dispatch_decoded_(d, h, ch.name, rssi, snr);
     if (h.want_ack && h.to == this->node_num_ && h.from != 0 && h.from != this->node_num_)
       this->send_ack_(h.from, h.id, ci);
+    this->mqtt_uplink_(packet, h, d, ci, rssi, snr);
     data = d;
     decoded = true;
     dec_ci = ci;
@@ -1298,6 +1313,52 @@ void Meshtastic::send_traceroute(uint32_t dest, const std::string &channel, bool
   this->send_data_(meshtastic_PortNum_TRACEROUTE_APP, buf, os.bytes_written, dest, idx, want_ack, 0, true);
 }
 
+bool Meshtastic::marshal_meshpacket_(const std::vector<uint8_t> &frame, meshtastic_MeshPacket &mp) {
+  if (frame.size() < MESHTASTIC_HEADER_LEN)
+    return false;
+  PacketHeader h;
+  if (!parse_header(frame, h))
+    return false;
+  mp = meshtastic_MeshPacket_init_zero;
+  mp.from = h.from;
+  mp.to = h.to;
+  mp.id = h.id;
+  mp.channel = h.channel;
+  mp.hop_limit = h.hop_limit;
+  mp.hop_start = h.hop_start;
+  mp.want_ack = h.want_ack;
+  mp.via_mqtt = h.via_mqtt;
+  mp.next_hop = h.next_hop;
+  mp.relay_node = h.relay_node;
+  mp.which_payload_variant = meshtastic_MeshPacket_encrypted_tag;
+  const size_t clen = frame.size() - MESHTASTIC_HEADER_LEN;
+  if (clen > sizeof(mp.encrypted.bytes))
+    return false;
+  mp.encrypted.size = clen;
+  memcpy(mp.encrypted.bytes, frame.data() + MESHTASTIC_HEADER_LEN, clen);
+  return true;
+}
+
+bool Meshtastic::unmarshal_meshpacket_(const meshtastic_MeshPacket &mp, std::vector<uint8_t> &frame) {
+  if (mp.which_payload_variant != meshtastic_MeshPacket_encrypted_tag)
+    return false;
+  PacketHeader h{};
+  h.to = mp.to;
+  h.from = mp.from;
+  h.id = mp.id;
+  h.hop_limit = mp.hop_limit;
+  h.want_ack = mp.want_ack;
+  h.via_mqtt = mp.via_mqtt;
+  h.hop_start = mp.hop_start;
+  h.channel = mp.channel;
+  h.next_hop = mp.next_hop;
+  h.relay_node = mp.relay_node;
+  frame.resize(MESHTASTIC_HEADER_LEN + mp.encrypted.size);
+  serialize_header(h, frame.data());
+  memcpy(frame.data() + MESHTASTIC_HEADER_LEN, mp.encrypted.bytes, mp.encrypted.size);
+  return true;
+}
+
 #ifdef USE_MESH_UDP
 void Meshtastic::udp_setup_() {
   if (!this->udp_enabled_)
@@ -1328,28 +1389,11 @@ void Meshtastic::udp_setup_() {
 }
 
 void Meshtastic::udp_broadcast_(const std::vector<uint8_t> &frame) {
-  if (this->udp_socket_ == nullptr || frame.size() < MESHTASTIC_HEADER_LEN)
+  if (this->udp_socket_ == nullptr)
     return;
-  PacketHeader h;
-  if (!parse_header(frame, h))
+  meshtastic_MeshPacket mp;
+  if (!this->marshal_meshpacket_(frame, mp))
     return;
-  meshtastic_MeshPacket mp = meshtastic_MeshPacket_init_zero;
-  mp.from = h.from;
-  mp.to = h.to;
-  mp.id = h.id;
-  mp.channel = h.channel;
-  mp.hop_limit = h.hop_limit;
-  mp.hop_start = h.hop_start;
-  mp.want_ack = h.want_ack;
-  mp.via_mqtt = h.via_mqtt;
-  mp.next_hop = h.next_hop;
-  mp.relay_node = h.relay_node;
-  mp.which_payload_variant = meshtastic_MeshPacket_encrypted_tag;
-  const size_t clen = frame.size() - MESHTASTIC_HEADER_LEN;
-  if (clen > sizeof(mp.encrypted.bytes))
-    return;
-  mp.encrypted.size = clen;
-  memcpy(mp.encrypted.bytes, frame.data() + MESHTASTIC_HEADER_LEN, clen);
 
   uint8_t buf[meshtastic_MeshPacket_size];
   pb_ostream_t os = pb_ostream_from_buffer(buf, sizeof(buf));
@@ -1362,7 +1406,11 @@ void Meshtastic::udp_broadcast_(const std::vector<uint8_t> &frame) {
   this->udp_socket_->sendto(buf, os.bytes_written, 0, (struct sockaddr *) &dest, sizeof(dest));
 }
 
+#endif  // USE_MESH_UDP
+
+#if defined(USE_MESH_UDP) || defined(USE_MQTT)
 void Meshtastic::loop() {
+#ifdef USE_MESH_UDP
   if (this->udp_socket_ == nullptr) {
 #ifdef MESH_HAS_NETWORK
     const uint32_t now = millis();
@@ -1372,42 +1420,258 @@ void Meshtastic::loop() {
       this->udp_setup_();
     }
 #endif
-    if (this->udp_socket_ == nullptr)
-      return;
   }
-  uint8_t buf[meshtastic_MeshPacket_size];
-  while (this->udp_socket_->ready()) {
-    struct sockaddr_storage src{};
-    socklen_t srclen = sizeof(src);
-    ssize_t n = this->udp_socket_->recvfrom(buf, sizeof(buf), (struct sockaddr *) &src, &srclen);
-    if (n <= 0)
-      break;
-    meshtastic_MeshPacket mp = meshtastic_MeshPacket_init_zero;
-    pb_istream_t s = pb_istream_from_buffer(buf, (size_t) n);
-    if (!pb_decode(&s, meshtastic_MeshPacket_fields, &mp))
-      continue;
-    if (mp.which_payload_variant != meshtastic_MeshPacket_encrypted_tag)
-      continue;
-    if (mp.from == 0 || mp.from == this->node_num_)
-      continue;
-    PacketHeader hh{};
-    hh.to = mp.to;
-    hh.from = mp.from;
-    hh.id = mp.id;
-    hh.hop_limit = mp.hop_limit;
-    hh.want_ack = mp.want_ack;
-    hh.via_mqtt = mp.via_mqtt;
-    hh.hop_start = mp.hop_start;
-    hh.channel = mp.channel;
-    hh.next_hop = mp.next_hop;
-    hh.relay_node = mp.relay_node;
-    std::vector<uint8_t> frame(MESHTASTIC_HEADER_LEN + mp.encrypted.size);
-    serialize_header(hh, frame.data());
-    memcpy(frame.data() + MESHTASTIC_HEADER_LEN, mp.encrypted.bytes, mp.encrypted.size);
-    this->handle_rx(frame, 0.0f, 0.0f);
+  if (this->udp_socket_ != nullptr) {
+    uint8_t buf[meshtastic_MeshPacket_size];
+    while (this->udp_socket_->ready()) {
+      struct sockaddr_storage src{};
+      socklen_t srclen = sizeof(src);
+      ssize_t n = this->udp_socket_->recvfrom(buf, sizeof(buf), (struct sockaddr *) &src, &srclen);
+      if (n <= 0)
+        break;
+      meshtastic_MeshPacket mp = meshtastic_MeshPacket_init_zero;
+      pb_istream_t s = pb_istream_from_buffer(buf, (size_t) n);
+      if (!pb_decode(&s, meshtastic_MeshPacket_fields, &mp))
+        continue;
+      if (mp.from == 0 || mp.from == this->node_num_)
+        continue;
+      std::vector<uint8_t> frame;
+      if (!this->unmarshal_meshpacket_(mp, frame))
+        continue;
+      this->handle_rx(frame, 0.0f, 0.0f);
+    }
+  }
+#endif  // USE_MESH_UDP
+  this->mqtt_loop_();
+}
+#endif  // USE_MESH_UDP || USE_MQTT
+
+#ifdef USE_MQTT
+std::string Meshtastic::mqtt_topic_(const char *kind, const std::string &channel_name) const {
+  char node[12];
+  snprintf(node, sizeof(node), "!%08x", this->node_num_);
+  return this->mqtt_root_topic_ + "/" + this->mqtt_region_ + "/2/" + kind + "/" + channel_name + "/" + node;
+}
+
+void Meshtastic::mqtt_loop_() {
+  if (!this->mqtt_enabled_ || mqtt::global_mqtt_client == nullptr || !mqtt::global_mqtt_client->is_connected())
+    return;
+  if (!this->mqtt_subscribed_) {
+    this->mqtt_subscribe_();
+    this->mqtt_subscribed_ = true;
+  }
+  if (this->mqtt_map_enabled_) {
+    const uint32_t now = millis();
+    if (this->mqtt_last_map_ms_ == 0 || now - this->mqtt_last_map_ms_ >= this->mqtt_map_interval_s_ * 1000UL) {
+      this->mqtt_last_map_ms_ = now;
+      this->mqtt_publish_map_();
+    }
   }
 }
-#endif  // USE_MESH_UDP
+
+void Meshtastic::mqtt_subscribe_() {
+  // Downlink: per downlink-enabled channel, accept JSON commands at <root>/<region>/2/json/<channel>/tx.
+  for (auto &ch : this->channels_) {
+    if (!ch.downlink)
+      continue;
+    const std::string topic = this->mqtt_root_topic_ + "/" + this->mqtt_region_ + "/2/json/" + ch.name + "/tx";
+    const std::string chan = ch.name;
+    mqtt::global_mqtt_client->subscribe(
+        topic, [this, chan](const std::string &t, const std::string &payload) { this->mqtt_on_downlink_(chan, payload); });
+    ESP_LOGD(TAG, "MQTT downlink subscribed: %s", topic.c_str());
+  }
+}
+
+void Meshtastic::mqtt_uplink_(const std::vector<uint8_t> &frame, const PacketHeader &h, const meshtastic_Data &decoded,
+                              size_t channel_idx, float rssi, float snr) {
+  if (!this->mqtt_enabled_ || mqtt::global_mqtt_client == nullptr || !mqtt::global_mqtt_client->is_connected())
+    return;
+  if (h.via_mqtt)  // never re-uplink a packet that itself arrived from MQTT
+    return;
+  if (channel_idx >= this->channels_.size())
+    return;
+  Channel &ch = this->channels_[channel_idx];
+  if (!ch.uplink)
+    return;
+
+  // ServiceEnvelope (protobuf) uplink -> <root>/<region>/2/e/<channel>/!<node>.
+  meshtastic_MeshPacket mp;
+  if (this->marshal_meshpacket_(frame, mp)) {
+    if (!this->mqtt_encryption_enabled_) {
+      mp.which_payload_variant = meshtastic_MeshPacket_decoded_tag;
+      mp.decoded = decoded;
+    }
+    mp.rx_rssi = (int32_t) rssi;
+    mp.rx_snr = snr;
+    char gw[12];
+    snprintf(gw, sizeof(gw), "!%08x", this->node_num_);
+    std::string chan = ch.name;
+    std::string gws = gw;
+    meshtastic_ServiceEnvelope env = meshtastic_ServiceEnvelope_init_zero;
+    env.packet = &mp;
+    env.channel_id = (char *) chan.c_str();
+    env.gateway_id = (char *) gws.c_str();
+    size_t sz = 0;
+    if (pb_get_encoded_size(&sz, meshtastic_ServiceEnvelope_fields, &env)) {
+      std::vector<uint8_t> buf(sz);
+      pb_ostream_t os = pb_ostream_from_buffer(buf.data(), buf.size());
+      if (pb_encode(&os, meshtastic_ServiceEnvelope_fields, &env))
+        mqtt::global_mqtt_client->publish(this->mqtt_topic_("e", ch.name), (const char *) buf.data(), os.bytes_written, 0,
+                                          false);
+    }
+  }
+
+  // JSON uplink -> <root>/<region>/2/json/<channel>/!<node>, for the human-friendly types only.
+  if (!this->mqtt_json_enabled_)
+    return;
+  const char *type = nullptr;
+  switch (decoded.portnum) {
+    case meshtastic_PortNum_TEXT_MESSAGE_APP:
+      type = "text";
+      break;
+    case meshtastic_PortNum_POSITION_APP:
+      type = "position";
+      break;
+    case meshtastic_PortNum_NODEINFO_APP:
+      type = "nodeinfo";
+      break;
+    case meshtastic_PortNum_TELEMETRY_APP:
+      type = "telemetry";
+      break;
+    default:
+      return;
+  }
+  const std::string topic = this->mqtt_topic_("json", ch.name);
+  const meshtastic_Data d = decoded;
+  const PacketHeader hh = h;
+  const uint8_t cidx = (uint8_t) channel_idx;
+  mqtt::global_mqtt_client->publish_json(topic, [d, hh, rssi, snr, cidx, type](JsonObject root) {
+    root["type"] = type;
+    root["from"] = hh.from;
+    root["to"] = hh.to;
+    root["id"] = hh.id;
+    root["channel"] = cidx;
+    root["rssi"] = (int) rssi;
+    root["snr"] = snr;
+    root["hop_start"] = hh.hop_start;
+    char sender[12];
+    snprintf(sender, sizeof(sender), "!%08x", hh.from);
+    root["sender"] = sender;
+    JsonObject payload = root["payload"].to<JsonObject>();
+    pb_istream_t s = pb_istream_from_buffer(d.payload.bytes, d.payload.size);
+    if (d.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP) {
+      payload["text"] = std::string((const char *) d.payload.bytes, d.payload.size);
+    } else if (d.portnum == meshtastic_PortNum_POSITION_APP) {
+      meshtastic_Position pos = meshtastic_Position_init_zero;
+      if (pb_decode(&s, meshtastic_Position_fields, &pos)) {
+        payload["latitude_i"] = pos.latitude_i;
+        payload["longitude_i"] = pos.longitude_i;
+        payload["altitude"] = pos.altitude;
+        payload["precision_bits"] = pos.precision_bits;
+      }
+    } else if (d.portnum == meshtastic_PortNum_NODEINFO_APP) {
+      meshtastic_User u = meshtastic_User_init_zero;
+      if (pb_decode(&s, meshtastic_User_fields, &u)) {
+        payload["id"] = std::string(u.id);
+        payload["longname"] = std::string(u.long_name);
+        payload["shortname"] = std::string(u.short_name);
+        payload["hardware"] = (int) u.hw_model;
+        payload["role"] = (int) u.role;
+      }
+    } else if (d.portnum == meshtastic_PortNum_TELEMETRY_APP) {
+      meshtastic_Telemetry t = meshtastic_Telemetry_init_zero;
+      if (pb_decode(&s, meshtastic_Telemetry_fields, &t)) {
+        if (t.which_variant == meshtastic_Telemetry_device_metrics_tag) {
+          payload["battery_level"] = t.variant.device_metrics.battery_level;
+          payload["voltage"] = t.variant.device_metrics.voltage;
+          payload["channel_utilization"] = t.variant.device_metrics.channel_utilization;
+          payload["air_util_tx"] = t.variant.device_metrics.air_util_tx;
+          payload["uptime_seconds"] = t.variant.device_metrics.uptime_seconds;
+        } else if (t.which_variant == meshtastic_Telemetry_environment_metrics_tag) {
+          payload["temperature"] = t.variant.environment_metrics.temperature;
+          payload["relative_humidity"] = t.variant.environment_metrics.relative_humidity;
+          payload["barometric_pressure"] = t.variant.environment_metrics.barometric_pressure;
+        }
+      }
+    }
+  });
+}
+
+void Meshtastic::mqtt_on_downlink_(const std::string &channel_name, const std::string &payload) {
+  json::parse_json(payload, [this, channel_name](JsonObject root) -> bool {
+    const std::string type = root["type"] | "";
+    if (type == "sendtext") {
+      const std::string text = root["payload"] | "";
+      if (!text.empty()) {
+        ESP_LOGD(TAG, "MQTT downlink sendtext on \"%s\"", channel_name.c_str());
+        this->send_text(text, MESHTASTIC_BROADCAST_ADDR, channel_name, false);
+      }
+    } else if (type == "sendposition") {
+      const double lat = root["latitude"] | 0.0;
+      const double lon = root["longitude"] | 0.0;
+      const int alt = root["altitude"] | 0;
+      ESP_LOGD(TAG, "MQTT downlink sendposition on \"%s\"", channel_name.c_str());
+      this->send_position(lat, lon, alt, 32, channel_name, false);
+    }
+    return true;
+  });
+}
+
+void Meshtastic::mqtt_publish_map_() {
+  meshtastic_MapReport mr = meshtastic_MapReport_init_zero;
+  strncpy(mr.long_name, this->long_name_.c_str(), sizeof(mr.long_name) - 1);
+  strncpy(mr.short_name, this->short_name_.c_str(), sizeof(mr.short_name) - 1);
+  mr.role = (meshtastic_Config_DeviceConfig_Role) this->role_;
+  mr.hw_model = (meshtastic_HardwareModel) this->hw_model_;
+  mr.position_precision = this->mqtt_map_precision_;
+  mr.num_online_local_nodes = (uint16_t) this->nodedb_.count_active(millis(), 2 * 60 * 60 * 1000UL);
+  if (this->self_position_.has_latitude_i && this->self_position_.has_longitude_i) {
+    mr.latitude_i = this->self_position_.latitude_i;
+    mr.longitude_i = this->self_position_.longitude_i;
+    mr.altitude = this->self_position_.altitude;
+    mr.has_opted_report_location = true;
+  }
+
+  uint8_t mrbuf[meshtastic_MapReport_size];
+  pb_ostream_t mos = pb_ostream_from_buffer(mrbuf, sizeof(mrbuf));
+  if (!pb_encode(&mos, meshtastic_MapReport_fields, &mr))
+    return;
+
+  meshtastic_MeshPacket mp = meshtastic_MeshPacket_init_zero;
+  mp.from = this->node_num_;
+  mp.to = MESHTASTIC_BROADCAST_ADDR;
+  mp.id = (uint32_t) millis();
+  mp.which_payload_variant = meshtastic_MeshPacket_decoded_tag;
+  mp.decoded.portnum = meshtastic_PortNum_MAP_REPORT_APP;
+  mp.decoded.payload.size = mos.bytes_written;
+  memcpy(mp.decoded.payload.bytes, mrbuf, mos.bytes_written);
+
+  char gw[12];
+  snprintf(gw, sizeof(gw), "!%08x", this->node_num_);
+  std::string gws = gw;
+  std::string chan = this->channels_.empty() ? std::string() : this->channels_[0].name;
+  meshtastic_ServiceEnvelope env = meshtastic_ServiceEnvelope_init_zero;
+  env.packet = &mp;
+  env.channel_id = (char *) chan.c_str();
+  env.gateway_id = (char *) gws.c_str();
+
+  size_t sz = 0;
+  if (!pb_get_encoded_size(&sz, meshtastic_ServiceEnvelope_fields, &env))
+    return;
+  std::vector<uint8_t> buf(sz);
+  pb_ostream_t os = pb_ostream_from_buffer(buf.data(), buf.size());
+  if (pb_encode(&os, meshtastic_ServiceEnvelope_fields, &env)) {
+    // The public map server consumes <root>/2/map/ (region-independent).
+    const std::string topic = this->mqtt_root_topic_ + "/2/map/";
+    mqtt::global_mqtt_client->publish(topic, (const char *) buf.data(), os.bytes_written, 0, false);
+    ESP_LOGD(TAG, "MQTT map report published (%u B)", (unsigned) os.bytes_written);
+  }
+}
+#else
+void Meshtastic::mqtt_loop_() {}
+void Meshtastic::mqtt_uplink_(const std::vector<uint8_t> &, const PacketHeader &, const meshtastic_Data &, size_t, float,
+                              float) {}
+#endif  // USE_MQTT
 
 }  // namespace meshtastic
 }  // namespace esphome
