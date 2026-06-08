@@ -3,6 +3,12 @@ PROTO_ROOT=./meshtastic-protobufs
 PROTO_DIR=$(PROTO_ROOT)/meshtastic
 PROTO_OUT=./components/meshtastic
 
+# Hand-written sources only (generated *.pb.* / enum_names.* / _enums.py are excluded).
+CPP_FILES=$(shell find components/meshtastic \( -name '*.cpp' -o -name '*.h' \) | grep -vE '\.pb\.|enum_names')
+PY_FILES=components/meshtastic/__init__.py components/meshtastic/sensor/__init__.py \
+         components/meshtastic/text_sensor/__init__.py components/meshtastic/packet_transport/__init__.py \
+         scripts/gen_enums.py
+
 # Transitive imports reachable from mesh.proto + mqtt.proto + deviceonly.proto.
 PROTO_NAMES=atak channel config device_ui deviceonly localonly mesh module_config mqtt portnums telemetry xmodem
 
@@ -50,6 +56,10 @@ gen-clean:
 
 format:
 	clang-format -i $(CPP_FILES)
+	ruff format $(PY_FILES)
+	ruff check --fix $(PY_FILES)
 
 lint:
 	clang-format --dry-run --Werror $(CPP_FILES)
+	ruff format --check $(PY_FILES)
+	ruff check $(PY_FILES)

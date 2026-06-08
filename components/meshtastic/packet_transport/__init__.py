@@ -10,9 +10,7 @@ from .. import CONF_CHANNEL, Meshtastic, meshtastic_ns
 
 CONF_MESHTASTIC_ID = "meshtastic_id"
 
-MeshtasticTransport = meshtastic_ns.class_(
-    "MeshtasticTransport", cg.Parented.template(Meshtastic), PollingComponent
-)
+MeshtasticTransport = meshtastic_ns.class_("MeshtasticTransport", cg.Parented.template(Meshtastic), PollingComponent)
 
 CONFIG_SCHEMA = transport_schema(MeshtasticTransport).extend(
     {
