@@ -77,6 +77,9 @@ class Meshtastic : public Component
   }
 #endif
   void add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink);
+  // Statically known peer (YAML `known_nodes:`): seeded into the node DB at boot, pinned as favorite.
+  void add_known_node(uint32_t num, const std::vector<uint8_t> &public_key, const std::string &long_name,
+                      const std::string &short_name, uint32_t hw_model, uint32_t role);
 
 #ifdef USE_SX126X
   void set_radio(sx126x::SX126x *radio);
@@ -295,6 +298,17 @@ class Meshtastic : public Component
   };
   std::vector<OutstandingTx> outstanding_tx_;
   std::vector<Channel> channels_;
+  struct KnownNode {
+    uint32_t num;
+    uint8_t public_key[32];
+    std::string long_name;
+    std::string short_name;
+    uint32_t hw_model;
+    uint32_t role;
+  };
+  std::vector<KnownNode> known_nodes_;
+  void seed_known_nodes_();
+  const KnownNode *find_known_node_(uint32_t num) const;
   PacketDedup dedup_;
   NodeDb nodedb_;
   bool request_unknown_node_info_{false};

@@ -20,6 +20,8 @@ CONF_LONG_NAME = "long_name"
 CONF_SHORT_NAME = "short_name"
 CONF_NODE_NUM = "node_num"
 CONF_PRIVATE_KEY = "private_key"
+CONF_KNOWN_NODES = "known_nodes"
+CONF_PUBLIC_KEY = "public_key"
 CONF_CHANNELS = "channels"
 CONF_PSK = "psk"
 CONF_UPLINK = "uplink"
@@ -480,6 +482,45 @@ def validate_private_key(value):
     return list(raw)
 
 
+def validate_public_key(value):
+    # Curve25519 public key: 32 raw bytes, given as base64 (as shown by `meshtastic --info`)
+    value = cv.string_strict(value)
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError):
+        raise cv.Invalid("public_key must be base64")
+    if len(raw) != 32:
+        raise cv.Invalid(f"public_key must decode to 32 bytes, got {len(raw)}")
+    return list(raw)
+
+
+# Statically known peers: seeded into the node DB at boot (pinned as favorites, never evicted) so DMs to
+# them can be PKC-encrypted immediately, without first exchanging NodeInfo over the air.
+KNOWN_NODE_SCHEMA = cv.Schema(
+    {
+        cv.Required(CONF_NODE_NUM): cv.hex_uint32_t,
+        cv.Required(CONF_PUBLIC_KEY): validate_public_key,
+        cv.Optional(CONF_LONG_NAME, default=""): cv.All(cv.string, cv.Length(max=39)),
+        cv.Optional(CONF_SHORT_NAME, default=""): cv.All(cv.string, cv.Length(max=4)),
+        cv.Optional(CONF_HW_MODEL, default="UNSET"): cv.enum(_enums.HARDWARE_MODELS, upper=True),
+        cv.Optional(CONF_ROLE, default="CLIENT"): cv.enum(_enums.ROLES, upper=True),
+    }
+)
+
+
+def validate_known_nodes(value):
+    value = cv.ensure_list(KNOWN_NODE_SCHEMA)(value)
+    seen = set()
+    for node in value:
+        num = node[CONF_NODE_NUM]
+        if num in (0, 0xFFFFFFFF):
+            raise cv.Invalid(f"known_nodes: invalid node_num 0x{num:08x}")
+        if num in seen:
+            raise cv.Invalid(f"known_nodes: duplicate node_num 0x{num:08x}")
+        seen.add(num)
+    return value
+
+
 CHANNEL_SCHEMA = cv.Schema(
     {
         cv.Required(CONF_NAME): cv.All(cv.string, cv.Length(max=11)),
@@ -610,6 +651,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_MQTT): MQTT_SCHEMA,
         cv.Optional(CONF_REMOTE_HARDWARE): REMOTE_HARDWARE_SCHEMA,
         cv.Optional(CONF_CHANNELS): cv.ensure_list(CHANNEL_SCHEMA),
+        cv.Optional(CONF_KNOWN_NODES): validate_known_nodes,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -673,6 +715,18 @@ async def to_code(config):
 
     for ch in config.get(CONF_CHANNELS, []):
         cg.add(var.add_channel(ch[CONF_NAME], ch[CONF_PSK], ch[CONF_UPLINK], ch[CONF_DOWNLINK]))
+
+    for kn in config.get(CONF_KNOWN_NODES, []):
+        cg.add(
+            var.add_known_node(
+                kn[CONF_NODE_NUM],
+                kn[CONF_PUBLIC_KEY],
+                kn[CONF_LONG_NAME],
+                kn[CONF_SHORT_NAME],
+                kn[CONF_HW_MODEL],
+                kn[CONF_ROLE],
+            )
+        )
 
     for conf in config.get(CONF_ON_PACKET, []):
         trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)

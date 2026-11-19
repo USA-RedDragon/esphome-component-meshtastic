@@ -48,6 +48,57 @@ struct PersistNode {
   char short_name[5];
 };
 
+void Meshtastic::add_known_node(uint32_t num, const std::vector<uint8_t> &public_key, const std::string &long_name,
+                                const std::string &short_name, uint32_t hw_model, uint32_t role) {
+  KnownNode kn{};
+  kn.num = num;
+  memcpy(kn.public_key, public_key.data(), std::min<size_t>(public_key.size(), sizeof(kn.public_key)));
+  kn.long_name = long_name;
+  kn.short_name = short_name;
+  kn.hw_model = hw_model;
+  kn.role = role;
+  this->known_nodes_.push_back(std::move(kn));
+}
+
+const Meshtastic::KnownNode *Meshtastic::find_known_node_(uint32_t num) const {
+  for (const auto &kn : this->known_nodes_) {
+    if (kn.num == num)
+      return &kn;
+  }
+  return nullptr;
+}
+
+// Seed (or refresh) the statically configured peers in the node DB. Runs after the persisted DB is
+// restored, so the YAML public key always wins; names/hw_model/role from YAML only fill gaps or override
+// when explicitly given. Pinned as favorites so the DB never evicts them.
+void Meshtastic::seed_known_nodes_() {
+  if (!this->nodedb_.enabled())
+    return;
+  for (const auto &kn : this->known_nodes_) {
+    if (kn.num == this->node_num_)
+      continue;
+    bool is_new = false;
+    meshtastic_NodeInfoLite *node = this->nodedb_.get_or_create(kn.num, &is_new);
+    if (node == nullptr)
+      continue;
+    node->num = kn.num;
+    node->is_favorite = true;
+    node->has_user = true;
+    node->user.public_key.size = sizeof(kn.public_key);
+    memcpy(node->user.public_key.bytes, kn.public_key, sizeof(kn.public_key));
+    if (!kn.long_name.empty() || node->user.long_name[0] == '\0')
+      snprintf(node->user.long_name, sizeof(node->user.long_name), "%s", kn.long_name.c_str());
+    if (!kn.short_name.empty() || node->user.short_name[0] == '\0')
+      snprintf(node->user.short_name, sizeof(node->user.short_name), "%s", kn.short_name.c_str());
+    if (kn.hw_model != meshtastic_HardwareModel_UNSET || is_new)
+      node->user.hw_model = (meshtastic_HardwareModel) kn.hw_model;
+    if (is_new)
+      node->user.role = (meshtastic_Config_DeviceConfig_Role) kn.role;
+    ESP_LOGD(TAG, "Known node !%08x \"%s\" (%s) %s", (unsigned) kn.num, node->user.long_name, node->user.short_name,
+             is_new ? "seeded" : "refreshed");
+  }
+}
+
 void Meshtastic::add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink) {
   Channel ch;
   ch.name = name;
@@ -172,6 +223,7 @@ void Meshtastic::setup() {
   this->init_keypair_();
   if (this->persist_node_db_) {
     this->load_nodedb_();
+    this->seed_known_nodes_();
     this->set_interval(600000, [this]() {
       if (this->nodedb_dirty_) {
         this->save_nodedb_();
@@ -179,6 +231,9 @@ void Meshtastic::setup() {
       }
     });
   }
+
+  if (!this->persist_node_db_)
+    this->seed_known_nodes_();
 
   if (this->node_info_interval_ > 0) {
     this->defer([this]() { this->send_node_info(); });
@@ -242,6 +297,10 @@ void Meshtastic::dump_config() {
   }
   if (this->channels_.empty())
     ESP_LOGW(TAG, "No channels configured; received packets cannot be decoded");
+  for (const auto &kn : this->known_nodes_) {
+    ESP_LOGCONFIG(TAG, "  Known node !%08x \"%s\" (%s) key=%02x%02x%02x%02x...", (unsigned) kn.num, kn.long_name.c_str(),
+                  kn.short_name.c_str(), kn.public_key[0], kn.public_key[1], kn.public_key[2], kn.public_key[3]);
+  }
   ESP_LOGCONFIG(TAG, "  PKC (direct messages): %s",
                 this->has_keypair_
                     ? (this->private_key_configured_ ? "ready (configured key)" : "ready (generated key)")
@@ -326,8 +385,19 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
         node->user.hw_model = user.hw_model;
         node->user.role = user.role;
         node->user.is_licensed = user.is_licensed;
-        node->user.public_key.size = user.public_key.size;
-        memcpy(node->user.public_key.bytes, user.public_key.bytes, user.public_key.size);
+        const KnownNode *kn = this->find_known_node_(h.from);
+        if (kn != nullptr) {
+          // Statically configured peer: keep the YAML public key, never let an over-the-air NodeInfo replace it.
+          if (user.public_key.size == 32 && memcmp(user.public_key.bytes, kn->public_key, 32) != 0)
+            ESP_LOGW(TAG, "  NodeInfo from known node !%08x carries a DIFFERENT public key; keeping configured key",
+                     (unsigned) h.from);
+          node->is_favorite = true;
+          node->user.public_key.size = sizeof(kn->public_key);
+          memcpy(node->user.public_key.bytes, kn->public_key, sizeof(kn->public_key));
+        } else {
+          node->user.public_key.size = user.public_key.size;
+          memcpy(node->user.public_key.bytes, user.public_key.bytes, user.public_key.size);
+        }
         this->nodedb_dirty_ = true;
       }
       ESP_LOGD(TAG, "  node !%08x \"%s\" (%s) %s", h.from, user.long_name, user.short_name,
