@@ -623,6 +623,21 @@ CONFIG_SCHEMA = cv.Schema(
 
 async def to_code(config):
     cg.add_library("nanopb/Nanopb", "0.4.91")
+    if CORE.using_zephyr:
+        # crypto.cpp uses the PSA Crypto API on Zephyr (nRF Connect SDK nrf_security)
+        from esphome.components.zephyr import zephyr_add_prj_conf
+
+        for opt in (
+            "PSA_WANT_KEY_TYPE_AES",
+            "PSA_WANT_ALG_CTR",  # channel encryption
+            "PSA_WANT_ALG_CCM",  # PKI direct messages
+            "PSA_WANT_ALG_ECDH",  # X25519
+            "PSA_WANT_ECC_MONTGOMERY_255",
+            "PSA_WANT_KEY_TYPE_ECC_KEY_PAIR_IMPORT",
+            "PSA_WANT_KEY_TYPE_ECC_KEY_PAIR_DERIVE",
+            "PSA_WANT_ALG_SHA_256",
+        ):
+            zephyr_add_prj_conf(opt, True)
 
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
