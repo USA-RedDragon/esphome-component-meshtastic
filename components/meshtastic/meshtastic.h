@@ -36,7 +36,8 @@
 #define USE_SX127X 1
 #endif
 
-#if __has_include("esphome/components/socket/socket.h")
+// Zephyr (nRF52/Thread): IPv6-only stack, no IPv4 multicast (struct ip_mreq) -> no UDP bridge
+#if __has_include("esphome/components/socket/socket.h") && !defined(USE_ZEPHYR)
 #include "esphome/components/socket/socket.h"
 #include <memory>
 #define USE_MESH_UDP 1
