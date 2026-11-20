@@ -479,6 +479,8 @@ void Meshtastic::dispatch_decoded_(const meshtastic_Data &data, const PacketHead
     meshtastic_RouteDiscovery rd = meshtastic_RouteDiscovery_init_zero;
     pb_istream_t rs = pb_istream_from_buffer(data.payload.bytes, data.payload.size);
     if (pb_decode(&rs, meshtastic_RouteDiscovery_fields, &rd)) {
+      for (auto *t : this->on_traceroute_request_triggers_)
+        t->trigger(h.from, channel_name, rd, rssi, snr);
       if (rd.snr_towards_count < (pb_size_t) (sizeof(rd.snr_towards) / sizeof(rd.snr_towards[0]))) {
         int v = (int) lroundf(snr * 4.0f);
         v = v > 127 ? 127 : (v < -128 ? -128 : v);

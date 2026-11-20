@@ -112,6 +112,7 @@ class Meshtastic : public Component
   using OnLocalStatsTrigger = Trigger<uint32_t, std::string, meshtastic_LocalStats, float, float>;
   using OnHealthTrigger = Trigger<uint32_t, std::string, meshtastic_HealthMetrics, float, float>;
   using OnTraceRouteResponseTrigger = Trigger<uint32_t, std::string, meshtastic_RouteDiscovery, float, float>;
+  using OnTraceRouteRequestTrigger = Trigger<uint32_t, std::string, meshtastic_RouteDiscovery, float, float>;
   using OnNeighborInfoTrigger = Trigger<uint32_t, std::string, meshtastic_NeighborInfo, float, float>;
   using OnWaypointTrigger = Trigger<uint32_t, std::string, meshtastic_Waypoint, float, float>;
   using OnDetectionTrigger = Trigger<uint32_t, std::string, std::string, float, float>;
@@ -130,6 +131,9 @@ class Meshtastic : public Component
   void add_on_health_trigger(OnHealthTrigger *t) { this->on_health_triggers_.push_back(t); }
   void add_on_traceroute_response_trigger(OnTraceRouteResponseTrigger *t) {
     this->on_traceroute_response_triggers_.push_back(t);
+  }
+  void add_on_traceroute_request_trigger(OnTraceRouteRequestTrigger *t) {
+    this->on_traceroute_request_triggers_.push_back(t);
   }
   void add_on_neighbor_info_trigger(OnNeighborInfoTrigger *t) { this->on_neighbor_info_triggers_.push_back(t); }
   void add_on_waypoint_trigger(OnWaypointTrigger *t) { this->on_waypoint_triggers_.push_back(t); }
@@ -319,6 +323,7 @@ class Meshtastic : public Component
   std::vector<OnLocalStatsTrigger *> on_local_stats_triggers_;
   std::vector<OnHealthTrigger *> on_health_triggers_;
   std::vector<OnTraceRouteResponseTrigger *> on_traceroute_response_triggers_;
+  std::vector<OnTraceRouteRequestTrigger *> on_traceroute_request_triggers_;
   std::vector<OnNeighborInfoTrigger *> on_neighbor_info_triggers_;
   std::vector<OnWaypointTrigger *> on_waypoint_triggers_;
   std::vector<OnDetectionTrigger *> on_detection_triggers_;

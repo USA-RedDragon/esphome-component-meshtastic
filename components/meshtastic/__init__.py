@@ -59,6 +59,7 @@ CONF_ON_POWER_METRICS = "on_power_metrics"
 CONF_ON_LOCAL_STATS = "on_local_stats"
 CONF_ON_HEALTH_METRICS = "on_health_metrics"
 CONF_ON_TRACEROUTE_RESPONSE = "on_traceroute_response"
+CONF_ON_TRACEROUTE_REQUEST = "on_traceroute_request"
 CONF_ON_NEIGHBOR_INFO = "on_neighbor_info"
 CONF_ON_WAYPOINT = "on_waypoint"
 CONF_ON_DETECTION = "on_detection"
@@ -197,6 +198,10 @@ HealthTrigger = meshtastic_ns.class_(
 )
 TraceRouteResponseTrigger = meshtastic_ns.class_(
     "TraceRouteResponseTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_RouteDiscovery, cg.float_, cg.float_),
+)
+TraceRouteRequestTrigger = meshtastic_ns.class_(
+    "TraceRouteRequestTrigger",
     automation.Trigger.template(cg.uint32, cg.std_string, meshtastic_RouteDiscovery, cg.float_, cg.float_),
 )
 NeighborInfoTrigger = meshtastic_ns.class_(
@@ -587,6 +592,9 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_ON_TRACEROUTE_RESPONSE): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(TraceRouteResponseTrigger)}
         ),
+        cv.Optional(CONF_ON_TRACEROUTE_REQUEST): automation.validate_automation(
+            {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(TraceRouteRequestTrigger)}
+        ),
         cv.Optional(CONF_ON_NEIGHBOR_INFO): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(NeighborInfoTrigger)}
         ),
@@ -764,6 +772,19 @@ async def to_code(config):
             )
 
     for conf in config.get(CONF_ON_TRACEROUTE_RESPONSE, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        await automation.build_automation(
+            trigger,
+            [
+                (cg.uint32, "from"),
+                (cg.std_string, "channel"),
+                (meshtastic_RouteDiscovery, "route"),
+                (cg.float_, "rssi"),
+                (cg.float_, "snr"),
+            ],
+            conf,
+        )
+    for conf in config.get(CONF_ON_TRACEROUTE_REQUEST, []):
         trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
         await automation.build_automation(
             trigger,

@@ -174,6 +174,11 @@ meshtastic:
       - logger.log:
           format: "Traceroute reply via !%08x: %u out, %u back"
           args: ['from', '(unsigned) route.route_count', '(unsigned) route.route_back_count']
+    on_traceroute_request:
+      # Fires when someone traceroutes us (the reply is sent automatically right after); `route` as received.
+      - logger.log:
+          format: "Traceroute request from !%08x: %u hops, snr=%.1f"
+          args: ['from', '(unsigned) route.route_count', 'snr']
     on_neighbor_info:
       - logger.log:
           format: "NeighborInfo !%08x: %u neighbors"
