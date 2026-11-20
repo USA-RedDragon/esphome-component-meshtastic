@@ -246,6 +246,8 @@ void Meshtastic::dump_config() {
                 this->has_keypair_
                     ? (this->private_key_configured_ ? "ready (configured key)" : "ready (generated key)")
                     : "key derivation FAILED");
+  if (this->has_keypair_)
+    ESP_LOGCONFIG(TAG, "  Public key: %s", base64_encode(this->public_key_, 32).c_str());
 #ifdef USE_SX126X
   if (this->sx126x_ != nullptr)
     ESP_LOGCONFIG(TAG, "  Radio: SX126x");
