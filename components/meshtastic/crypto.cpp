@@ -89,6 +89,8 @@ static bool psa_import_(psa_key_type_t type, size_t bits, psa_key_usage_t usage,
 
 bool aes_ctr(const uint8_t *key, size_t key_len, const uint8_t iv[16], const uint8_t *in, uint8_t *out, size_t len) {
 #if defined(MESHTASTIC_AES_PSA)
+  // CTR is a keystream XOR: decryption is the same operation as encryption, so callers use aes_ctr() for
+  // both directions and the key only ever needs ENCRYPT usage (it is only used with psa_cipher_encrypt_setup).
   psa_key_id_t id;
   if (!psa_import_(PSA_KEY_TYPE_AES, key_len * 8, PSA_KEY_USAGE_ENCRYPT, PSA_ALG_CTR, key, key_len, &id))
     return false;
@@ -96,18 +98,24 @@ bool aes_ctr(const uint8_t *key, size_t key_len, const uint8_t iv[16], const uin
   psa_cipher_operation_t op = PSA_CIPHER_OPERATION_INIT;
   bool ok = psa_cipher_encrypt_setup(&op, id, PSA_ALG_CTR) == PSA_SUCCESS &&
             psa_cipher_set_iv(&op, iv, 16) == PSA_SUCCESS;
-  // Through a small bounce buffer, so in == out (in place) is safe regardless of the driver.
+  // Through a small bounce buffer, so in == out (in place) is safe regardless of the driver. A driver may
+  // buffer part of a block and emit it later (or in finish), so input and output positions are tracked
+  // separately; the output never runs ahead of the input already copied out, so in-place stays safe.
   uint8_t chunk[64];
-  size_t done = 0;
-  while (ok && done < len) {
-    size_t n = len - done < sizeof(chunk) ? len - done : sizeof(chunk);
-    memcpy(chunk, in + done, n);
+  size_t in_done = 0, out_done = 0;
+  while (ok && in_done < len) {
+    size_t n = len - in_done < sizeof(chunk) ? len - in_done : sizeof(chunk);
+    memcpy(chunk, in + in_done, n);
     size_t olen = 0;
-    ok = psa_cipher_update(&op, chunk, n, out + done, n, &olen) == PSA_SUCCESS && olen == n;
-    done += n;
+    ok = psa_cipher_update(&op, chunk, n, out + out_done, len - out_done, &olen) == PSA_SUCCESS &&
+         olen <= len - out_done;
+    in_done += n;
+    out_done += olen;
   }
   size_t flen = 0;
-  ok = ok && psa_cipher_finish(&op, nullptr, 0, &flen) == PSA_SUCCESS && flen == 0;
+  ok = ok && psa_cipher_finish(&op, out + out_done, len - out_done, &flen) == PSA_SUCCESS;
+  out_done += flen;
+  ok = ok && out_done == len;
   if (!ok)
     psa_cipher_abort(&op);
   psa_destroy_key(id);
