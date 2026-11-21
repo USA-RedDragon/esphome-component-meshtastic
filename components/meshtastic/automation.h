@@ -113,6 +113,14 @@ class TraceRouteResponseTrigger : public Trigger<uint32_t, std::string, meshtast
   explicit TraceRouteResponseTrigger(Meshtastic *parent) { parent->add_on_traceroute_response_trigger(this); }
 };
 
+// Fires when someone sends a traceroute request addressed to us (before the automatic reply goes out).
+// (from, channel, route, rssi, snr): the RouteDiscovery as received (route = hops from the requester towards us,
+// snr_towards = their RX SNRs, dB*4 as int8; our own RX SNR is the `snr` argument).
+class TraceRouteRequestTrigger : public Trigger<uint32_t, std::string, meshtastic_RouteDiscovery, float, float> {
+ public:
+  explicit TraceRouteRequestTrigger(Meshtastic *parent) { parent->add_on_traceroute_request_trigger(this); }
+};
+
 // meshtastic.send_text action. dest defaults to broadcast; channel is a channel name (empty = primary).
 template<typename... Ts> class SendTextAction : public Action<Ts...> {
  public:
