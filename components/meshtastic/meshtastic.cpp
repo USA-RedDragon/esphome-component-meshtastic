@@ -69,8 +69,9 @@ const Meshtastic::KnownNode *Meshtastic::find_known_node_(uint32_t num) const {
 }
 
 // Seed (or refresh) the statically configured peers in the node DB. Runs after the persisted DB is
-// restored, so the YAML public key always wins; names/hw_model/role from YAML only fill gaps or override
-// when explicitly given. Pinned as favorites so the DB never evicts them.
+// restored, so the YAML public key always wins. Names/hw_model/role from YAML override the persisted values
+// only when explicitly given (non-empty name, hw_model != UNSET, role present); otherwise they only fill
+// a new entry. Pinned as favorites so the DB never evicts them.
 void Meshtastic::seed_known_nodes_() {
   if (!this->nodedb_.enabled())
     return;
@@ -92,8 +93,10 @@ void Meshtastic::seed_known_nodes_() {
       snprintf(node->user.short_name, sizeof(node->user.short_name), "%s", kn.short_name.c_str());
     if (kn.hw_model != meshtastic_HardwareModel_UNSET || is_new)
       node->user.hw_model = (meshtastic_HardwareModel) kn.hw_model;
-    if (is_new)
+    if (kn.role != KNOWN_NODE_ROLE_UNSET)
       node->user.role = (meshtastic_Config_DeviceConfig_Role) kn.role;
+    else if (is_new)
+      node->user.role = meshtastic_Config_DeviceConfig_Role_CLIENT;
     ESP_LOGD(TAG, "Known node !%08x \"%s\" (%s) %s", (unsigned) kn.num, node->user.long_name, node->user.short_name,
              is_new ? "seeded" : "refreshed");
   }

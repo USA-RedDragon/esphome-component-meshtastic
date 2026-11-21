@@ -503,9 +503,14 @@ KNOWN_NODE_SCHEMA = cv.Schema(
         cv.Optional(CONF_LONG_NAME, default=""): cv.All(cv.string, cv.Length(max=39)),
         cv.Optional(CONF_SHORT_NAME, default=""): cv.All(cv.string, cv.Length(max=4)),
         cv.Optional(CONF_HW_MODEL, default="UNSET"): cv.enum(_enums.HARDWARE_MODELS, upper=True),
-        cv.Optional(CONF_ROLE, default="CLIENT"): cv.enum(_enums.ROLES, upper=True),
+        # No default: an omitted role keeps the persisted one (new entries get CLIENT).
+        cv.Optional(CONF_ROLE): cv.enum(_enums.ROLES, upper=True),
     }
 )
+
+
+# Sentinel passed to add_known_node() when `role:` is omitted (matches Meshtastic::KNOWN_NODE_ROLE_UNSET).
+KNOWN_NODE_ROLE_UNSET = 0xFFFFFFFF
 
 
 def validate_known_nodes(value):
@@ -724,7 +729,7 @@ async def to_code(config):
                 kn[CONF_LONG_NAME],
                 kn[CONF_SHORT_NAME],
                 kn[CONF_HW_MODEL],
-                kn[CONF_ROLE],
+                kn.get(CONF_ROLE, KNOWN_NODE_ROLE_UNSET),
             )
         )
 

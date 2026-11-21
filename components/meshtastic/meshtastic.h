@@ -78,6 +78,8 @@ class Meshtastic : public Component
 #endif
   void add_channel(const std::string &name, const std::vector<uint8_t> &key, bool uplink, bool downlink);
   // Statically known peer (YAML `known_nodes:`): seeded into the node DB at boot, pinned as favorite.
+  // role == KNOWN_NODE_ROLE_UNSET: not configured, keep the persisted role (CLIENT for new entries).
+  static constexpr uint32_t KNOWN_NODE_ROLE_UNSET = 0xFFFFFFFF;
   void add_known_node(uint32_t num, const std::vector<uint8_t> &public_key, const std::string &long_name,
                       const std::string &short_name, uint32_t hw_model, uint32_t role);
 
